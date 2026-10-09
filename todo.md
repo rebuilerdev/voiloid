@@ -356,3 +356,20 @@ Bot / API / Gateway ──▶ Redis（セッション・リアルタイム状態
 - [x] `docs/troubleshooting.md`（運営）: これまでに起きたエラーと対処
 - [x] `docs/development.md`（開発者）: 構成・仕組み、ローカル開発、テスト、Migration の方針、CI / CD、コードの決まり
 - [x] `apps/web/README.md`: create-next-app の雛形を置き換える
+
+---
+
+# エンジンのオンオフで Worker がオフラインになる不具合（2026-10-10）
+
+原因: Worker の設定の通知（`worker`）を受けると、Gateway が接続中の Worker を「無効化・削除」用のコード（4003）で切断し、Worker はそのコードを受けると 60 秒待ってから再接続していた。
+
+- [x] Gateway: `worker` の通知では、DB を読み直して「削除・メンテナンス・トークン再発行」のときだけ 4003 で切断する。それ以外（エンジンのオンオフ・接続先の変更）は切断せず、止めたエンジンをその場で反映する
+- [x] 運営コンソールの「切断」は、すぐに再接続してよいコード（4010）で切断する（Worker は約 1 秒後に再接続）
+- [x] テスト（Gateway・Worker）、画面の説明、docs
+
+---
+
+# official-worker プロファイルに AivisSpeech を加える（2026-10-10）
+
+- [x] `compose.yaml`: `aivisspeech` サービス（`official-worker` プロファイル）を追加し、公式Worker のエンジンを VOICEVOX・AivisSpeech にする
+- [x] docs（運用ガイド 5-2・構築の `.env` の表）を合わせる

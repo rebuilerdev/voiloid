@@ -108,8 +108,9 @@ services:
     depends_on:
       gateway: { condition: service_healthy }
 
-  # 公式Worker（同じマシンで VOICEVOX を動かす場合）。
-  # トークンは運営コンソールの「Worker」→「公式Worker」で発行し、.env の OFFICIAL_WORKER_TOKEN に設定する
+  # 公式Worker（同じマシンで VOICEVOX・AivisSpeech を動かす場合）。
+  # トークンは運営コンソールの「Worker」→「公式Worker」で（VOICEVOX・AivisSpeech を選んで）発行し、
+  # .env の OFFICIAL_WORKER_TOKEN に設定する
   official-worker:
     <<: *app
     image: voiloid/worker:${IMAGE_TAG:-latest}
@@ -120,14 +121,22 @@ services:
       CONTROL_SERVER: ws://gateway:4100/worker
       ALLOW_INSECURE: "true"
       WORKER_TOKEN: ${OFFICIAL_WORKER_TOKEN:-}
-      WORKER_ENGINES: VOICEVOX
+      WORKER_ENGINES: VOICEVOX,AivisSpeech
       VOICEVOX_URL: http://voicevox:50021
+      AIVISSPEECH_URL: http://aivisspeech:10101
     depends_on:
       gateway: { condition: service_healthy }
       voicevox: { condition: service_started }
+      aivisspeech: { condition: service_started }
 
   voicevox:
     image: voicevox/voicevox_engine:cpu-latest
+    restart: unless-stopped
+    profiles: ["official-worker"]
+
+  # 起動ではモデルを読み込むため、使えるようになるまで数分かかる（その間はエンジンが Unhealthy と表示される）
+  aivisspeech:
+    image: ghcr.io/aivis-project/aivisspeech-engine:cpu-latest
     restart: unless-stopped
     profiles: ["official-worker"]
 

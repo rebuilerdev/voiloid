@@ -177,6 +177,17 @@ describe("createWorkerClient", () => {
     await until(() => gateway!.sockets.length === 2)
   })
 
+  it("運営者に切断された場合（RECONNECT）は、すぐに再接続する", async () => {
+    gateway = await startFakeGateway()
+    start([adapter()])
+    await until(() => gateway!.sockets.length === 1)
+    const closedAt = Date.now()
+    gateway.sockets[0]?.close(WORKER_CLOSE.RECONNECT)
+    await until(() => gateway!.sockets.length === 2)
+    // 無効化（rejectedMs = 400）より早い
+    expect(Date.now() - closedAt).toBeLessThan(300)
+  })
+
   it("無効化された場合・トークンが拒否された場合は長めに待ってから再接続する", async () => {
     gateway = await startFakeGateway()
     start([adapter()])

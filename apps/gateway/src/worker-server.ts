@@ -35,6 +35,7 @@ interface AuthenticatedWorker {
   type: WorkerType
   ownerUserId: string | null
   disabledEngines: Set<string>
+  secretHash: string
 }
 
 export interface WorkerServerOptions {
@@ -82,6 +83,7 @@ export function createWorkerServer(options: WorkerServerOptions) {
       type: worker.type,
       ownerUserId: worker.ownerUserId,
       disabledEngines: new Set(worker.engines.map((e) => e.engineId)),
+      secretHash: worker.credential.secretHash,
     }
   }
 
@@ -147,6 +149,7 @@ export function createWorkerServer(options: WorkerServerOptions) {
           latencyMs: undefined,
           lastSeenAt: new Date(),
           disabledEngines: auth.disabledEngines,
+          secretHash: auth.secretHash,
         }
         const previous = registry.add(worker)
         if (previous) previous.socket.close(WORKER_CLOSE.REPLACED, "replaced by a new connection")
@@ -245,9 +248,32 @@ export function createWorkerServer(options: WorkerServerOptions) {
         })
     },
 
-    /** Worker の削除・トークン再発行: 接続を切る（再接続時に再認証される） */
-    disconnect(publicId: string) {
-      registry.findByPublicId(publicId)?.socket.close(WORKER_CLOSE.DISABLED, "worker updated")
+    /**
+     * Worker の設定が変わったときに、接続中の Worker に反映する。
+     * - 運営者の「切断」（reconnect）: すぐに再接続してよいコードで切断する
+     * - 削除・メンテナンス・トークン再発行: 再接続しても受け付けないため、DISABLED で切断する
+     * - それ以外（エンジンのオンオフなど）: 切断せず、止めたエンジンを読み直す
+     */
+    async refresh(publicId: string, options: { reconnect?: boolean } = {}): Promise<void> {
+      const live = registry.findByPublicId(publicId)
+      if (!live) return
+      if (options.reconnect) {
+        live.socket.close(WORKER_CLOSE.RECONNECT, "disconnected by an operator")
+        return
+      }
+      const worker = await repos.workers.findForAuth(publicId)
+      const usable =
+        worker?.credential &&
+        !worker.credential.revokedAt &&
+        !worker.deletedAt &&
+        worker.enabled &&
+        (live.secretHash === undefined || worker.credential.secretHash === live.secretHash)
+      if (!worker || !usable) {
+        live.socket.close(WORKER_CLOSE.DISABLED, "worker updated")
+        return
+      }
+      live.disabledEngines = new Set(worker.engines.map((e) => e.engineId))
+      await registry.publishLive(live)
     },
 
     async close() {

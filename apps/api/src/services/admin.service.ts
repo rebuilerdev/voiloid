@@ -267,7 +267,7 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
             { type: "worker", id: publicId },
             { disabledEngines: input.disabledEngines.join(",") },
           )
-          // 接続中の Worker を再接続させ、Gateway が止めたエンジンを読み直す
+          // Gateway が、接続中の Worker の止めたエンジンを読み直す（切断しない）
           await live.invalidate({ kind: "worker", workerId: publicId })
         }
       }
@@ -300,7 +300,8 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
     async disconnectWorker(session: Session, publicId: string): Promise<void> {
       await anyWorker(publicId)
       await audit(session, "admin.worker.disconnect", { type: "worker", id: publicId })
-      await live.invalidate({ kind: "worker", workerId: publicId })
+      // すぐに再接続してよいコードで切断させる（Worker は約 1 秒後に再接続する）
+      await live.invalidate({ kind: "worker", workerId: publicId, reconnect: true })
     },
 
     async workerConnections(publicId: string): Promise<AdminWorkerConnection[]> {

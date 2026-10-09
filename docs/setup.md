@@ -35,7 +35,7 @@ main ブランチに変更が入り CI が成功すると、runner が本番マ�
 
 | もの | 説明 |
 |---|---|
-| Linux のサーバー | Ubuntu など。目安は 2 CPU・4 GB メモリ以上（同じマシンで公式Worker の VOICEVOX も動かすなら 4 CPU・8 GB 以上） |
+| Linux のサーバー | Ubuntu など。目安は 2 CPU・4 GB メモリ以上（同じマシンで公式Worker の VOICEVOX・AivisSpeech も動かすなら 4 CPU・8〜12 GB 以上） |
 | ドメイン | Web コンソールの URL（例: `voiloid.example.com`）。DNS の A レコードを本番マシンの IP アドレスに向けます |
 | 開いたポート | 80 と 443（HTTPS の証明書を自動で取得するため。両方を外部から接続できるようにします） |
 | Discord のアカウント | Developer Portal でアプリを作ります |
@@ -186,7 +186,7 @@ openssl rand -hex 24       # POSTGRES_PASSWORD 用（URL に入れるため、�
 | `S3_SECRET_ACCESS_KEY` | ○ | シークレットアクセスキー |
 | `S3_FORCE_PATH_STYLE` | — | R2 では `true` を推奨 |
 | `WORKER_IMAGE` | ○ | 自鯖Worker の利用者に案内するイメージ（例: `ghcr.io/rebuilerdev/voiloid-worker:latest`）。`<owner>` を置き換えます |
-| `OFFICIAL_WORKER_TOKEN` | — | 同じマシンで公式Worker（VOICEVOX）を動かす場合のトークン。後から設定します（[運用ガイド](operations.md#5-公式workerの追加)） |
+| `OFFICIAL_WORKER_TOKEN` | — | 同じマシンで公式Worker（VOICEVOX・AivisSpeech）を動かす場合のトークン。後から設定します（[運用ガイド](operations.md#5-公式workerの追加)） |
 | `LOG_LEVEL` | — | ログの詳しさ（既定 `info`） |
 | `BACKUP_DIR` | ○ | `/srv/voiloid/backups`（**絶対パス** にします） |
 | `BACKUP_INTERVAL_SECONDS` | — | 定期バックアップの間隔（既定 86400 = 1 日） |

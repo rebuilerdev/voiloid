@@ -473,7 +473,7 @@ export const en: Dictionary = {
     connectionsUpdated: "Servers updated",
     // Worker detail
     workerEnginesHint:
-      "Engines turned off are not used for routing or voice lists even if this worker runs them. The worker reconnects for a few seconds when you switch.",
+      "Engines turned off are not used for routing or voice lists even if this worker runs them. Switching takes effect immediately without disconnecting the worker.",
     engineTurnedOn: "Turned on {engine}",
     engineTurnedOff: "Turned off {engine}",
     engineSwitchLabel: "Use {engine}",

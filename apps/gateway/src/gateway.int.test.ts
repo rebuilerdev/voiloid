@@ -135,12 +135,51 @@ describe("接続・hello", () => {
     expect(h.gateway.registry.get(worker.id)).toBeDefined()
   })
 
-  it("Worker の削除・トークン再発行の通知で切断する", async () => {
+  const notify = (workerId: string, extra: Record<string, unknown> = {}) =>
+    h.redis.publish(redisKeys.invalidation(), JSON.stringify({ kind: "worker", workerId, ...extra }))
+
+  it.each([
+    ["トークン再発行", { credential: { update: { secretHash: "sha256:rotated" } } }],
+    ["メンテナンス", { enabled: false }],
+    ["削除", { deletedAt: new Date() }],
+  ])("%s の通知で、再接続しても受け付けないコードで切断する", async (_label, data) => {
     const { worker, token } = await registerTestWorker(h.db)
     const w = fake(token)
     await w.connect()
-    await h.redis.publish(redisKeys.invalidation(), JSON.stringify({ kind: "worker", workerId: worker.publicId }))
+    await h.db.worker.update({ where: { id: worker.id }, data })
+    await notify(worker.publicId)
     expect(await w.waitForClose()).toBe(WORKER_CLOSE.DISABLED)
+  })
+
+  it("エンジンのオンオフの通知では切断せず、止めたエンジンをその場で反映する", async () => {
+    const guild = await createTestGuild(h.db)
+    const { worker, token } = await registerTestWorker(h.db)
+    await fake(token).connect()
+    expect((await synthesize(guild.discordGuildId, null)).status).toBe(200)
+
+    await h.db.workerEngine.updateMany({ where: { workerId: worker.id }, data: { enabled: false } })
+    await notify(worker.publicId)
+    await until(async () => (await synthesize(guild.discordGuildId, null)).status === 503)
+    expect(h.gateway.registry.get(worker.id)).toBeDefined()
+
+    await h.db.workerEngine.updateMany({ where: { workerId: worker.id }, data: { enabled: true } })
+    await notify(worker.publicId)
+    await until(async () => (await synthesize(guild.discordGuildId, null)).status === 200)
+  })
+
+  it("運営者の「切断」は、すぐに再接続してよいコードで切断する", async () => {
+    const { worker, token } = await registerTestWorker(h.db)
+    const w = fake(token)
+    await w.connect()
+    await notify(worker.publicId, { reconnect: true })
+    expect(await w.waitForClose()).toBe(WORKER_CLOSE.RECONNECT)
+  })
+
+  it("接続していない Worker の通知は何もしない", async () => {
+    const { worker } = await registerTestWorker(h.db)
+    await notify(worker.publicId)
+    await notify("missing")
+    expect(h.gateway.registry.list()).toEqual([])
   })
 })
 

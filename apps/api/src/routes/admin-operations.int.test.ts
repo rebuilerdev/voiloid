@@ -302,6 +302,8 @@ describe("Worker の操作", () => {
 
     await new Promise((r) => setTimeout(r, 50))
     expect(messages.filter((m) => m.includes(worker.publicId)).length).toBeGreaterThanOrEqual(3)
+    // 「切断」はすぐに再接続してよい通知にする
+    expect(messages.at(-1)).toBe(JSON.stringify({ kind: "worker", workerId: worker.publicId, reconnect: true }))
     subscriber.disconnect()
     const actions = (
       await h.db.auditLog.findMany({ where: { targetId: worker.publicId }, orderBy: { id: "asc" } })

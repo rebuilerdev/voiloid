@@ -18,6 +18,8 @@ export const WORKER_CLOSE = {
   DISABLED: 4003,
   /** 同じ Worker の新しい接続に置き換えられた */
   REPLACED: 4008,
+  /** 運営者が切断した（Worker はすぐに再接続してよい） */
+  RECONNECT: 4010,
   /** 一定時間 hello が届かない */
   HELLO_TIMEOUT: 4009,
 } as const
@@ -215,7 +217,8 @@ export type GuildSessionState = z.infer<typeof guildSessionSchema>
 export const invalidationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("guild"), guildId: z.string() }),
   z.object({ kind: z.literal("user"), userId: z.string() }),
-  z.object({ kind: z.literal("worker"), workerId: z.string() }),
+  /** Worker の設定が変わった。reconnect = true なら Gateway は切断して再接続させる（運営者の「切断」） */
+  z.object({ kind: z.literal("worker"), workerId: z.string(), reconnect: z.boolean().optional() }),
   /** サービス全体の設定（一時停止・上限値など） */
   z.object({ kind: z.literal("system") }),
   /** 振り分けの再計算だけ（公式Worker の担当サーバーの変更など。Worker は切断しない） */

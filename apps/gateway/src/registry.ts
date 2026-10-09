@@ -39,8 +39,10 @@ export interface ConnectedWorker {
   failures: number
   latencyMs: number | undefined
   lastSeenAt: Date
-  /** 運営者が止めたエンジン（Worker が動かしていても使わない。接続時に DB から読む） */
+  /** 運営者が止めたエンジン（Worker が動かしていても使わない。接続時と設定の変更時に DB から読む） */
   disabledEngines?: ReadonlySet<string>
+  /** 接続に使ったトークンのハッシュ（再発行されたら切断するため） */
+  secretHash?: string
 }
 
 export class WorkerJobError extends Error {

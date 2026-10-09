@@ -148,13 +148,19 @@ Web コンソールのサイドバーの「運営」から使います。
 
 ### 5-2. 起動する
 
-**A. 本番マシンで一緒に動かす（VOICEVOX のみ・いちばん手軽）**
+**A. 本番マシンで一緒に動かす（VOICEVOX・AivisSpeech・いちばん手軽）**
 
-1. 登録するときに、エンジンを VOICEVOX だけにする
+1. 登録するときに、エンジンを VOICEVOX と AivisSpeech にする
 2. `/srv/voiloid/.env` の `OFFICIAL_WORKER_TOKEN` にトークンを書く
-3. 再デプロイする（「Actions」→「Deploy」→「Run workflow」）。`official-worker` と `voicevox` も起動します
+3. 再デプロイする（「Actions」→「Deploy」→「Run workflow」）。`official-worker`・`voicevox`・`aivisspeech` も起動します
 
-本番マシンの CPU とメモリを使うので、読み上げが多い場合は B にしてください。
+- 本番マシンの CPU とメモリを使います（目安: VOICEVOX 1〜2 GB、AivisSpeech 2〜4 GB）。読み上げが多い場合やメモリが足りない場合は B にしてください
+- 起動直後はエンジンがモデルを読み込むため、数分間「Unhealthy」と表示されます。読み込みが終われば、1 分ほどで「Healthy」になります
+- 片方のエンジンだけを使いたい場合は、運営コンソールの Worker の詳細で、使わないエンジンをオフにします
+- やめるときは、`OFFICIAL_WORKER_TOKEN` を空にしてから、次のコマンドでコンテナを止めます（空にして再デプロイするだけでは止まりません）
+  ```bash
+  docker compose --env-file /srv/voiloid/.env --profile official-worker rm -sf official-worker voicevox aivisspeech
+  ```
 
 **B. 別のマシンで動かす（AivisSpeech なども可）**
 
@@ -213,7 +219,7 @@ docker compose logs -f worker      # "connected to the gateway" と出れば接�
 
 | 項目 | 説明 |
 |---|---|
-| エンジンのオンオフ | 止めたエンジンは、Worker が動かしていても読み上げ・声の一覧・プレビューに使いません。切り替えると Worker が数秒だけ再接続します。調子の悪いエンジンを一時的に外すときに使います |
+| エンジンのオンオフ | 止めたエンジンは、Worker が動かしていても読み上げ・声の一覧・プレビューに使いません。切り替えても Worker は切断されず、すぐに反映されます。調子の悪いエンジンを一時的に外すときに使います |
 | 担当するサーバー | 既定は「全サーバー」。「指定したサーバーだけ」にすると、追加したサーバーでだけ使います（専用の Worker や試験運用に）。Worker は切断しません |
 | メンテナンス | 振り分けから外し、接続も受け付けなくなります（削除はしません） |
 | トークンを再発行 | 古いトークンはすぐに使えなくなり、接続も切れます。新しいトークンで起動し直してください |

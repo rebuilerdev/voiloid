@@ -80,9 +80,13 @@ export function createGateway(options: GatewayOptions) {
         router.invalidateUser(event.userId)
         return
       case "worker":
-        // 接続先・削除・トークン再発行。振り分けを再計算し、接続中なら切断して再認証させる
+        // 振り分けを再計算し、接続中の Worker に反映する（削除・再発行・メンテナンスなら切断する）
         router.invalidateAll()
-        workers.disconnect(event.workerId)
+        void workers
+          .refresh(event.workerId, { reconnect: event.reconnect === true })
+          .catch((error: unknown) =>
+            options.logger.warn({ err: error, worker: event.workerId }, "failed to refresh a worker"),
+          )
         return
       case "system":
         // サービス全体の設定は Bot が扱う（合成の振り分けには影響しない）

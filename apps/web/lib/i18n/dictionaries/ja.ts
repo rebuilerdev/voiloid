@@ -475,7 +475,7 @@ export const ja = {
     connectionsUpdated: "接続先を変更しました",
     // Worker の詳細
     workerEnginesHint:
-      "オフにしたエンジンは、この Worker が動かしていても振り分けと声の一覧に使いません。切り替えると Worker が数秒だけ再接続します。",
+      "オフにしたエンジンは、この Worker が動かしていても振り分けと声の一覧に使いません。切り替えても Worker は切断されず、すぐに反映されます。",
     engineTurnedOn: "{engine} をオンにしました",
     engineTurnedOff: "{engine} をオフにしました",
     engineSwitchLabel: "{engine} を使う",
