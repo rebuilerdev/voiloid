@@ -244,3 +244,10 @@ Bot / API / Gateway ──▶ Redis（セッション・リアルタイム状態
 - [x] CI/CD・デプロイスクリプト・runner のラベル・docs（`/srv/voiloid`）・README
 - [x] 開発環境: 新しい名前で compose.dev を起動し直す（旧ボリューム `voice-bot-dev_postgres-data` は消さずに残す）
 - [x] `npm run check`・E2E・本番イメージのビルド
+
+---
+
+# GitHub（rebuilerdev/voiloid）の CI 修正（2026-10-09）
+
+- [x] `npm audit` の失敗: 間接依存を `overrides` で修正版に上げる（`tar` ^7.5.22 ← `@discordjs/opus`、`mysql2` ^3.24.5・`deepmerge-ts` ^8.0.2 ← Prisma）。Bot のイメージで `@discordjs/opus` が読み込めることを確認する
+- [x] CodeQL の失敗: 無料プランの非公開リポジトリではコードスキャンを使えないため、公開リポジトリのときだけ実行する

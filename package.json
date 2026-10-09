@@ -40,5 +40,10 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.71.1",
     "vitest": "5.0.3"
+  },
+  "overrides": {
+    "tar": "^7.5.22",
+    "mysql2": "^3.24.5",
+    "deepmerge-ts": "^8.0.2"
   }
 }
