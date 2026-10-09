@@ -1,0 +1,222 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CI: "true"
+  NEXT_TELEMETRY_DISABLED: "1"
+  PRISMA_HIDE_UPDATE_MESSAGE: "1"
+
+jobs:
+  # 書式・Lint・型・依存パッケージの脆弱性
+  static:
+    name: Static checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      # 本番で使う依存パッケージに High 以上の脆弱性があれば失敗させる
+      - run: npm audit --omit=dev --audit-level=high
+
+  # 単体テスト + 統合テスト（実 PostgreSQL / Redis）+ カバレッジの閾値
+  test:
+    name: Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voiloid
+          POSTGRES_PASSWORD: voiloid
+          POSTGRES_DB: voiloid_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U voiloid -d voiloid_test"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql://voiloid:voiloid@localhost:5432/voiloid_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      # 統合テストの前処理で、空の DB に全 Migration を適用する
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
+
+  # Migration の検証（仕様書: 空の DB に全 Migration → Generate → Schema との差分なし）
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voiloid
+          POSTGRES_PASSWORD: voiloid
+          POSTGRES_DB: voiloid_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U voiloid -d voiloid_ci"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://voiloid:voiloid@localhost:5432/voiloid_ci
+      DIRECT_DATABASE_URL: postgresql://voiloid:voiloid@localhost:5432/voiloid_ci
+      SHADOW_DATABASE_URL: postgresql://voiloid:voiloid@localhost:5432/voiloid_shadow
+    defaults:
+      run:
+        working-directory: packages/database
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+        working-directory: .
+      - run: PGPASSWORD=voiloid psql -h localhost -U voiloid -d voiloid_ci -c "CREATE DATABASE voiloid_shadow"
+      - name: Schema の書式と妥当性（整形で差分が出たら失敗）
+        run: npx prisma validate && npx prisma format && git diff --exit-code prisma/schema.prisma
+      - name: 空の DB に全 Migration を適用
+        run: npx prisma migrate deploy && npx prisma migrate status
+      - name: Schema と Migration に差分が無いこと（Migration の作り忘れの検出）
+        run: npx prisma migrate diff --from-migrations prisma/migrations --to-schema prisma/schema.prisma --exit-code
+      - name: Generated Client で型検査
+        run: npx prisma generate && npx tsc --noEmit
+      - name: 開発用 Seed を適用できること
+        run: npm run seed
+      - name: 破壊的な Migration のレビュー確認
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        run: node scripts/check-migrations.mjs "origin/${{ github.base_ref }}"
+
+  # Web GUI の E2E（モックモード・本番と同じ standalone 出力で起動）
+  e2e:
+    name: E2E (web)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @voiloid/web
+        env:
+          NEXT_PUBLIC_USE_MOCK: "true"
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: npm run test:e2e -w @voiloid/web
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 14
+
+  # 本番と同じ Dockerfile で全イメージをビルドできること
+  docker:
+    name: Docker build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [api, gateway, bot, web, worker, migrate]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: voiloid/${{ matrix.target }}:ci
+          build-args: |
+            NEXT_PUBLIC_DISCORD_CLIENT_ID=000000000000000000
+            NEXT_PUBLIC_WORKER_CONTROL_SERVER=wss://ci.example.com/worker
+            NEXT_PUBLIC_WORKER_IMAGE=ghcr.io/example/voiloid-worker:latest
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+      - name: 非 root で実行されること
+        run: test "$(docker image inspect voiloid/${{ matrix.target }}:ci --format '{{.Config.User}}')" = "node"
+
+  # 実際の VOICEVOX ENGINE を使った End-to-End（main のみ。イメージが大きいため）
+  voicevox:
+    name: E2E (worker + VOICEVOX)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: voiloid
+          POSTGRES_PASSWORD: voiloid
+          POSTGRES_DB: voiloid_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U voiloid -d voiloid_test"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+      voicevox:
+        image: voicevox/voicevox_engine:cpu-latest
+        ports: ["50021:50021"]
+    env:
+      TEST_DATABASE_URL: postgresql://voiloid:voiloid@localhost:5432/voiloid_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+      VOICEVOX_E2E_URL: http://localhost:50021
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - name: Wait for VOICEVOX
+        run: timeout 180 bash -c 'until curl -fs http://localhost:50021/version; do sleep 3; done'
+      - run: npx vitest run --project integration apps/worker

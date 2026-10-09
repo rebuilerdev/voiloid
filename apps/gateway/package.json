@@ -1,0 +1,23 @@
+{
+  "name": "@voiloid/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "build": "node ../../scripts/build-app.mjs",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@voiloid/database": "*",
+    "@voiloid/shared": "*",
+    "ioredis": "6.0.0",
+    "pino": "10.4.0",
+    "ws": "8.22.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2"
+  }
+}

@@ -1,0 +1,36 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Worker の WebSocket（Worker Gateway）
+	handle /worker {
+		reverse_proxy gateway:4100
+	}
+
+	# Control API
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+
+	# 内部向けのパスは外部に公開しない
+	handle /internal/* {
+		respond 404
+	}
+
+	# Web GUI
+	handle {
+		reverse_proxy web:3000
+	}
+}

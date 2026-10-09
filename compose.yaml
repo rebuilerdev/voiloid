@@ -1,0 +1,196 @@
+# 本番構成。本番マシン上で次のように起動する（scripts/deploy.sh が実行する）:
+#   docker compose --env-file .env build
+#   docker compose --env-file .env run --rm migrate
+#   docker compose --env-file .env up -d --wait
+#
+# 外部に公開するのは Caddy（80/443）だけ。PostgreSQL・Redis・内部 API は外部に公開しない。
+name: voiloid
+
+# 秘匿情報は .env に置き、各サービスには必要な値だけを渡す（最小権限）
+x-app: &app
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+x-build: &build
+  context: .
+  args:
+    NEXT_PUBLIC_DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+    NEXT_PUBLIC_WORKER_CONTROL_SERVER: wss://${APP_DOMAIN}/worker
+    NEXT_PUBLIC_WORKER_IMAGE: ${WORKER_IMAGE}
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web: { condition: service_healthy }
+      api: { condition: service_healthy }
+      gateway: { condition: service_healthy }
+
+  web:
+    <<: *app
+    image: voiloid/web:${IMAGE_TAG:-latest}
+    build: { <<: *build, target: web }
+    environment:
+      API_INTERNAL_URL: http://api:4000
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      api: { condition: service_healthy }
+
+  api:
+    <<: *app
+    image: voiloid/api:${IMAGE_TAG:-latest}
+    build: { <<: *build, target: api }
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_ORIGIN: https://${APP_DOMAIN}
+      SESSION_ENCRYPTION_KEY: ${SESSION_ENCRYPTION_KEY:?}
+      IP_HASH_SALT: ${IP_HASH_SALT:?}
+      DATABASE_URL: ${DATABASE_URL:?}
+      REDIS_URL: redis://redis:6379/0
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?}
+      DISCORD_BOT_TOKEN: ${DISCORD_TOKEN:?}
+      GATEWAY_INTERNAL_URL: http://gateway:4101
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET:?}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      # サービスの運営者（運営コンソールを使える Discord ユーザー ID。カンマ区切り）
+      OPERATOR_DISCORD_USER_IDS: ${OPERATOR_DISCORD_USER_IDS:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  gateway:
+    <<: *app
+    image: voiloid/gateway:${IMAGE_TAG:-latest}
+    build: { <<: *build, target: gateway }
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: ${DATABASE_URL:?}
+      REDIS_URL: redis://redis:6379/0
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  bot:
+    <<: *app
+    image: voiloid/bot:${IMAGE_TAG:-latest}
+    build: { <<: *build, target: bot }
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_ORIGIN: https://${APP_DOMAIN}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?}
+      SUB_BOT_TOKENS: ${SUB_BOT_TOKENS:-}
+      DATABASE_URL: ${DATABASE_URL:?}
+      REDIS_URL: redis://redis:6379/0
+      GATEWAY_INTERNAL_URL: http://gateway:4101
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?}
+    depends_on:
+      gateway: { condition: service_healthy }
+
+  # 公式Worker（同じマシンで VOICEVOX を動かす場合）。
+  # トークンは Web GUI ではなく管理コマンドで発行する（README の「公式Worker の追加」）
+  official-worker:
+    <<: *app
+    image: voiloid/worker:${IMAGE_TAG:-latest}
+    build: { <<: *build, target: worker }
+    profiles: ["official-worker"]
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CONTROL_SERVER: ws://gateway:4100/worker
+      ALLOW_INSECURE: "true"
+      WORKER_TOKEN: ${OFFICIAL_WORKER_TOKEN:-}
+      WORKER_ENGINES: VOICEVOX
+      VOICEVOX_URL: http://voicevox:50021
+    depends_on:
+      gateway: { condition: service_healthy }
+      voicevox: { condition: service_started }
+
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-latest
+    restart: unless-stopped
+    profiles: ["official-worker"]
+
+  # Migration（デプロイ時に scripts/deploy.sh が実行する。常駐しない）
+  migrate:
+    image: voiloid/migrate:${IMAGE_TAG:-latest}
+    build: { <<: *build, target: migrate }
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?}
+      DIRECT_DATABASE_URL: ${DIRECT_DATABASE_URL:-${DATABASE_URL}}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-voiloid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-voiloid}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: 256mb
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # セッションを再起動後も残す
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # PostgreSQL の定期バックアップ（pg_dump。保持期間を過ぎたものは削除）
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-voiloid}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-voiloid}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./docker/backup/backup.sh:/usr/local/bin/backup.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup.sh"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:

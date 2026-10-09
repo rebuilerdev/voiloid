@@ -1,0 +1,9 @@
+# Web GUI は Next.js 側の ESLint で管理する
+apps/web/
+node_modules/
+dist/
+coverage/
+packages/database/src/generated/
+packages/database/prisma/migrations/
+package-lock.json
+*.md

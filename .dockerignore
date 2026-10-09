@@ -1,0 +1,16 @@
+# ビルドに不要なもの・秘匿情報をイメージに入れない
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/test-results
+**/playwright-report
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.github
+prototype
+prototype.zip
+packages/database/src/generated

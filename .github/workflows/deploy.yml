@@ -1,0 +1,41 @@
+name: Deploy
+
+# main の CI がすべて成功したら、本番マシン上の self-hosted runner でビルド・Migration・起動を行う。
+# 本番マシンの準備は docs/operations.md の「デプロイの準備」を参照。
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: デプロイするコミット（空なら main の最新）
+        required: false
+
+# デプロイは同時に 1 つだけ。実行中のデプロイは中断しない
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to production
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: [self-hosted, voiloid-production]
+    environment: production
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.event.workflow_run.head_sha || github.sha }}
+      - name: Build, migrate and start
+        run: ./scripts/deploy.sh
+        env:
+          # 本番の環境変数ファイル（秘匿情報。リポジトリには置かない）
+          DEPLOY_ENV_FILE: ${{ vars.DEPLOY_ENV_FILE }}
+          # デプロイの記録（直前のバージョンへのロールバックに使う）
+          DEPLOY_STATE_DIR: ${{ vars.DEPLOY_STATE_DIR }}

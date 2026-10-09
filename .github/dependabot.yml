@@ -1,0 +1,30 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      # Prisma は CLI・Client・Adapter のバージョンを揃える
+      prisma:
+        patterns: ["prisma", "@prisma/*"]
+      discord:
+        patterns: ["discord.js", "@discordjs/*"]
+      next:
+        patterns: ["next", "eslint-config-next", "react", "react-dom", "@types/react*"]
+      lint-test:
+        patterns: ["eslint*", "@eslint/*", "typescript-eslint", "prettier", "vitest", "@vitest/*", "@playwright/test"]
+    ignore:
+      # メジャーアップデートは移行手順を確認してから手動で行う
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

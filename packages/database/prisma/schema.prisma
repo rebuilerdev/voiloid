@@ -1,0 +1,477 @@
+// voiloid 本番 DB スキーマ（本番版 完全仕様書 v1.1）
+//
+// - 変更は必ず Prisma Migration で行う（本番は migrate deploy のみ）
+// - Prisma で表せない制約（CHECK）は migration.sql に追記している
+// - 削除時の動作（Cascade / SetNull）はすべて明示する
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Enum ----------
+
+enum WorkerType {
+  OFFICIAL
+  PRIVATE
+}
+
+enum WorkerStatus {
+  ONLINE
+  BUSY
+  DEGRADED
+  OFFLINE
+  ERROR
+  DISABLED
+}
+
+enum EngineHealth {
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+  UNKNOWN
+}
+
+/// COMMAND = /join を実行したテキストチャンネルを読み上げる / FIXED = 設定したチャンネルを読み上げる
+enum ReadingMode {
+  COMMAND
+  FIXED
+}
+
+enum ReadUrlsMode {
+  OMIT
+  READ
+}
+
+enum LongMessageBehavior {
+  TRUNCATE
+  SKIP
+}
+
+enum WorkerMode {
+  AUTOMATIC
+  OFFICIAL
+  PRIVATE_PREFERRED
+  SPECIFIC
+}
+
+/// SERVER = サーバーの全員が使う（管理権限が必要）/ PERSONAL = 接続したユーザー本人だけが使う
+enum WorkerGuildScope {
+  SERVER
+  PERSONAL
+}
+
+/// 運営者の権限（.env の OPERATOR_DISCORD_USER_IDS は owner として別扱い）
+enum OperatorRole {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum AnnouncementLevel {
+  INFO
+  WARNING
+}
+
+// ---------- User ----------
+
+model User {
+  id                String  @id @default(uuid(7)) @db.Uuid
+  discordUserId     String  @unique @db.VarChar(20)
+  discordUsername   String  @db.VarChar(32)
+  discordGlobalName String? @db.VarChar(32)
+  discordAvatar     String? @db.VarChar(64)
+
+  /// 利用停止（運営者による）。停止中はログインできず、発言を読み上げない
+  suspendedAt       DateTime?
+  suspendedReason   String?   @db.VarChar(500)
+  suspendedByUserId String?   @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workers            Worker[]
+  dictionaryEntries  DictionaryEntry[]
+  auditLogs          AuditLog[]
+  voiceSettings      UserVoiceSettings?
+  guildVoiceSettings GuildUserVoiceSettings[]
+  grantedPermissions WorkerGuildPermission[]
+
+  @@index([suspendedAt])
+}
+
+/// 運営者（Web で追加した admin / editor / viewer）。ログイン前でも登録できるよう Discord の ID で持つ
+model Operator {
+  discordUserId String       @id @db.VarChar(20)
+  role          OperatorRole
+
+  createdByUserId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// サービス全体の設定（1 行だけ。id = 1 の CHECK 制約）
+model SystemSettings {
+  id Int @id @default(1)
+
+  maxWorkersPerUser    Int @default(10)
+  dictionaryMaxEntries Int @default(1000)
+  /// サーバーが設定できる最大文字数の上限
+  maxCharactersLimit   Int @default(1000)
+
+  /// 新しいサーバーの初期値
+  newGuildMaxCharacters   Int    @default(200)
+  newGuildVoiceEngineId   String @default("VOICEVOX") @db.VarChar(32)
+  newGuildVoiceSpeakerId  String @default("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9") @db.VarChar(128)
+  newGuildVoiceStyleId    String @default("3") @db.VarChar(128)
+  newGuildVoiceSpeed      Float  @default(1)
+  newGuildVoicePitch      Float  @default(0)
+  newGuildVoiceIntonation Float  @default(1)
+
+  /// 全サーバーの読み上げを一時停止する（メンテナンス）
+  readingPaused Boolean @default(false)
+
+  /// 全ユーザーの画面に表示するお知らせ
+  announcementMessage String?           @db.VarChar(500)
+  announcementLevel   AnnouncementLevel @default(INFO)
+
+  updatedByUserId String?  @db.Uuid
+  updatedAt       DateTime @updatedAt
+}
+
+/// マイボイス（全サーバー共通）。行が無い = 各サーバーのデフォルト音声を使う
+model UserVoiceSettings {
+  userId String @id @db.Uuid
+
+  engineId   String @db.VarChar(32)
+  speakerId  String @db.VarChar(128)
+  styleId    String @db.VarChar(128)
+  speed      Float  @default(1)
+  pitch      Float  @default(0)
+  intonation Float  @default(1)
+
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// サーバーごとのユーザー音声（マイボイスより優先する）
+model GuildUserVoiceSettings {
+  userId  String @db.Uuid
+  guildId String @db.Uuid
+
+  engineId   String @db.VarChar(32)
+  speakerId  String @db.VarChar(128)
+  styleId    String @db.VarChar(128)
+  speed      Float  @default(1)
+  pitch      Float  @default(0)
+  intonation Float  @default(1)
+
+  updatedAt DateTime @updatedAt
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([userId, guildId])
+  @@index([guildId])
+}
+
+// ---------- Guild ----------
+
+model Guild {
+  id             String @id @default(uuid(7)) @db.Uuid
+  discordGuildId String @unique @db.VarChar(20)
+
+  name String  @db.VarChar(100)
+  icon String? @db.VarChar(64)
+
+  ownerDiscordUserId String @db.VarChar(20)
+
+  memberCount Int?
+
+  botInstalled Boolean @default(false)
+
+  /// 利用停止（運営者による）。停止中は読み上げず、サーバー管理者も設定を変更できない
+  suspendedAt       DateTime?
+  suspendedReason   String?   @db.VarChar(500)
+  suspendedByUserId String?   @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settings          GuildSettings?
+  botProfile        GuildBotProfile?
+  dictionaryEntries DictionaryEntry[]
+  workerPermissions WorkerGuildPermission[]
+  voiceSessions     VoiceSession[]
+  usageEvents       UsageEvent[]
+  auditLogs         AuditLog[]
+  userVoiceSettings GuildUserVoiceSettings[]
+}
+
+model GuildSettings {
+  guildId String @id @db.Uuid
+
+  readingMode ReadingMode @default(COMMAND)
+
+  defaultTextChannelId  String? @db.VarChar(20)
+  defaultVoiceChannelId String? @db.VarChar(20)
+
+  autoJoin Boolean @default(false)
+
+  readUrlsMode ReadUrlsMode @default(OMIT)
+
+  maxCharacters Int @default(200)
+
+  longMessageBehavior LongMessageBehavior @default(TRUNCATE)
+
+  autoLeaveDelaySeconds Int @default(30)
+
+  workerMode WorkerMode @default(AUTOMATIC)
+
+  specificWorkerId String? @db.Uuid
+
+  fallbackToOfficial Boolean @default(true)
+
+  /// サーバーのデフォルト音声（既定: VOICEVOX ずんだもん ノーマル）
+  voiceEngineId   String @default("VOICEVOX") @db.VarChar(32)
+  voiceSpeakerId  String @default("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9") @db.VarChar(128)
+  voiceStyleId    String @default("3") @db.VarChar(128)
+  voiceSpeed      Float  @default(1)
+  voicePitch      Float  @default(0)
+  voiceIntonation Float  @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  specificWorker Worker? @relation(fields: [specificWorkerId], references: [id], onDelete: SetNull)
+
+  @@index([specificWorkerId])
+}
+
+model GuildBotProfile {
+  guildId String @id @db.Uuid
+
+  nickname String? @db.VarChar(32)
+
+  avatarObjectKey String? @db.VarChar(255)
+  bannerObjectKey String? @db.VarChar(255)
+
+  bio String? @db.VarChar(190)
+
+  discordAvatarHash String? @db.VarChar(64)
+  discordBannerHash String? @db.VarChar(64)
+
+  updatedByUserId String? @db.Uuid
+
+  updatedAt DateTime @updatedAt
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+}
+
+model DictionaryEntry {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  guildId String @db.Uuid
+
+  word    String @db.VarChar(128)
+  /// 重複判定用（NFKC + 小文字）。読み上げ時の置換は大文字小文字を区別しないため
+  wordKey String @db.VarChar(128)
+  reading String @db.VarChar(256)
+
+  createdByUserId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  createdBy User? @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([guildId, word])
+  @@unique([guildId, wordKey])
+  @@index([guildId])
+  @@index([createdByUserId])
+}
+
+// ---------- Worker ----------
+
+model Worker {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// API・トークンで使う公開 ID
+  publicId String @unique @db.VarChar(32)
+
+  ownerUserId String? @db.Uuid
+
+  name        String  @db.VarChar(64)
+  description String? @db.VarChar(500)
+
+  type WorkerType
+
+  status WorkerStatus @default(OFFLINE)
+
+  maxConcurrency Int @default(1)
+
+  enabled Boolean @default(true)
+
+  version String? @db.VarChar(64)
+
+  lastSeenAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  owner User? @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  credential            WorkerCredential?
+  engines               WorkerEngine[]
+  guildPermissions      WorkerGuildPermission[]
+  usageEvents           UsageEvent[]
+  specificGuildSettings GuildSettings[]
+
+  @@index([ownerUserId, deletedAt])
+  @@index([type, deletedAt])
+}
+
+/// Worker の接続トークン。secret の平文は保存しない
+model WorkerCredential {
+  workerId String @id @db.Uuid
+
+  secretHash String @db.VarChar(128)
+
+  createdAt DateTime  @default(now())
+  rotatedAt DateTime?
+  revokedAt DateTime?
+
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+}
+
+model WorkerEngine {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  workerId String @db.Uuid
+
+  engineId      String  @db.VarChar(32)
+  engineType    String  @db.VarChar(32)
+  engineName    String  @db.VarChar(64)
+  engineVersion String? @db.VarChar(64)
+
+  health EngineHealth @default(UNKNOWN)
+
+  lastSeenAt DateTime?
+
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@unique([workerId, engineId])
+  @@index([workerId])
+}
+
+model WorkerGuildPermission {
+  workerId String @db.Uuid
+  guildId  String @db.Uuid
+
+  scope WorkerGuildScope @default(SERVER)
+
+  grantedByUserId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  grantedBy User? @relation(fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@id([workerId, guildId])
+  @@index([guildId])
+  @@index([grantedByUserId])
+}
+
+// ---------- 履歴 ----------
+
+/// 読み上げセッションの履歴。リアルタイムの状態は Redis が正本
+model VoiceSession {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  guildId String @db.Uuid
+
+  botUserId String @db.VarChar(20)
+
+  textChannelId  String @db.VarChar(20)
+  voiceChannelId String @db.VarChar(20)
+
+  startedByUserId String? @db.VarChar(20)
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  endReason String? @db.VarChar(32)
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, startedAt])
+}
+
+model UsageEvent {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// 投稿者の Discord User ID（システムメッセージは null）
+  userId   String? @db.VarChar(20)
+  guildId  String  @db.Uuid
+  workerId String? @db.Uuid
+
+  /// Worker 削除後も公式 / 自鯖の集計ができるよう、記録時点の種別を保持する
+  workerType WorkerType?
+
+  engineId String @db.VarChar(32)
+
+  characters      Int
+  audioDurationMs Int?
+
+  success Boolean
+
+  createdAt DateTime @default(now())
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  worker Worker? @relation(fields: [workerId], references: [id], onDelete: SetNull)
+
+  @@index([guildId, createdAt])
+  @@index([workerId, createdAt])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  actorUserId String? @db.Uuid
+
+  guildId String? @db.Uuid
+
+  action String @db.VarChar(64)
+
+  targetType String  @db.VarChar(32)
+  targetId   String? @db.VarChar(64)
+
+  metadata Json?
+
+  ipHash String? @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  guild Guild? @relation(fields: [guildId], references: [id], onDelete: SetNull)
+
+  @@index([guildId, createdAt])
+  @@index([actorUserId, createdAt])
+}

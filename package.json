@@ -1,0 +1,44 @@
+{
+  "name": "voiloid",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.11.0",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:deps": "docker compose -f compose.dev.yaml up -d --wait",
+    "dev:deps:down": "docker compose -f compose.dev.yaml down",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "eslint --max-warnings=0 . && npm run lint -w @voiloid/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:coverage": "vitest run --coverage",
+    "db:generate": "npm run generate -w @voiloid/database",
+    "db:migrate": "npm run migrate:dev -w @voiloid/database",
+    "db:seed": "npm run seed -w @voiloid/database",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.19.1",
+    "@vitest/coverage-v8": "5.0.3",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.13.0",
+    "prettier": "3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.1",
+    "vitest": "5.0.3"
+  }
+}

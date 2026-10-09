@@ -1,0 +1,23 @@
+{
+  "name": "@voiloid/bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "build": "node ../../scripts/build-app.mjs src/main.ts src/scripts/deploy-commands.ts",
+    "start": "node dist/main.js",
+    "deploy-commands": "tsx --env-file-if-exists=.env src/scripts/deploy-commands.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@discordjs/opus": "0.10.0",
+    "@discordjs/voice": "0.19.2",
+    "@voiloid/database": "*",
+    "@voiloid/shared": "*",
+    "discord.js": "14.27.0",
+    "ioredis": "6.0.0",
+    "pino": "10.4.0",
+    "zod": "4.6.5"
+  }
+}

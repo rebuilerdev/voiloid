@@ -1,7 +1,6 @@
-# 参照用に残している旧プロジェクト（monorepo へ移行済み）
+# 参照用に残している旧プロジェクト（prototype/frontend に旧 frontend。monorepo へ移行済み）
 /prototype/
 /prototype.zip
-/frontend/
 
 # dependencies
 node_modules/
@@ -23,6 +22,9 @@ packages/database/src/generated/
 !.env.example
 !.env.*.example
 *.pem
+
+# バックアップ（本番マシンのローカル）
+/backups/
 
 # logs / misc
 *.log
