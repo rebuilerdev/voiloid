@@ -361,7 +361,11 @@ model Worker {
 
   status WorkerStatus @default(OFFLINE)
 
+  /// Worker が申告した同時処理の数（Worker の環境変数 MAX_CONCURRENCY）
   maxConcurrency Int @default(1)
+
+  /// Web で設定した同時処理の上限（NULL = 上限なし）。実際に使うのは申告と上限の小さいほう
+  concurrencyLimit Int?
 
   enabled Boolean @default(true)
 

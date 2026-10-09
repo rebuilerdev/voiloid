@@ -235,7 +235,7 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
     /** Worker の詳細（公式・自鯖） */
     worker: workerDetail,
 
-    /** 名前変更・メンテナンス（無効化 / 有効化）・エンジンの停止・公式Worker の担当サーバー */
+    /** 名前変更・メンテナンス（無効化 / 有効化）・エンジンの停止・同時処理の上限・公式Worker の担当サーバー */
     async updateWorker(session: Session, publicId: string, input: UpdateAdminWorkerRequest): Promise<AdminWorker> {
       let worker = await anyWorker(publicId)
       if (input.guildScope !== undefined && worker.type !== WorkerType.OFFICIAL) {
@@ -270,6 +270,17 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
           // Gateway が、接続中の Worker の止めたエンジンを読み直す（切断しない）
           await live.invalidate({ kind: "worker", workerId: publicId })
         }
+      }
+      if (input.concurrencyLimit !== undefined && input.concurrencyLimit !== worker.concurrencyLimit) {
+        worker = await repos.workers.setConcurrencyLimit(worker.id, input.concurrencyLimit)
+        await audit(
+          session,
+          "admin.worker.update_concurrency",
+          { type: "worker", id: publicId },
+          { concurrencyLimit: input.concurrencyLimit ?? "none" },
+        )
+        // Gateway が接続中の Worker の上限を読み直す（切断しない）
+        await live.invalidate({ kind: "worker", workerId: publicId })
       }
       if (input.guildScope !== undefined && (input.guildScope === "selected") !== worker.restrictedToGuilds) {
         worker = await repos.workers.setRestrictedToGuilds(worker.id, input.guildScope === "selected")

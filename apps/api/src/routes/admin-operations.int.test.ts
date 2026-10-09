@@ -366,10 +366,22 @@ describe("Worker の操作", () => {
       const scope = await call(h, "PATCH", url, { user, body: { guildScope: "selected" } })
       expect(scope.data()).toMatchObject({ guildScope: "selected" })
 
-      await vi.waitFor(() => expect(messages).toHaveLength(2))
-      expect(messages).toEqual([{ kind: "worker", workerId: official.publicId }, { kind: "routing" }])
+      const limit = await call(h, "PATCH", url, { user, body: { concurrencyLimit: 2 } })
+      expect(limit.data()).toMatchObject({ concurrencyLimit: 2 })
+      expect((await call(h, "PATCH", url, { user, body: { concurrencyLimit: 100 } })).statusCode).toBe(400)
+
+      await vi.waitFor(() => expect(messages).toHaveLength(3))
+      expect(messages).toEqual([
+        { kind: "worker", workerId: official.publicId },
+        { kind: "routing" },
+        { kind: "worker", workerId: official.publicId },
+      ])
       const actions = (await h.db.auditLog.findMany({ orderBy: { createdAt: "asc" } })).map((a) => a.action)
-      expect(actions).toEqual(["admin.worker.update_engines", "admin.worker.update_scope"])
+      expect(actions).toEqual([
+        "admin.worker.update_engines",
+        "admin.worker.update_scope",
+        "admin.worker.update_concurrency",
+      ])
     } finally {
       subscriber.disconnect()
     }

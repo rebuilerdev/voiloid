@@ -17,7 +17,12 @@ export interface Worker {
   status: WorkerStatus
   engines: WorkerEngine[]
   runningJobs: number
+  /** 実際に使う同時処理の数 = min(Worker の申告, 上限) */
   maxConcurrency: number
+  /** Worker が申告した同時処理の数（Worker の MAX_CONCURRENCY） */
+  workerConcurrency?: number
+  /** Web で設定した同時処理の上限（無ければ上限なし） */
+  concurrencyLimit?: number
   latency?: number
   lastSeenAt?: string
   queue?: number
@@ -56,6 +61,16 @@ export interface CreateWorkerResponse {
 }
 
 export const WORKER_NAME_LENGTH = { min: 1, max: 64 } as const
+
+/** 同時処理の上限（Worker の MAX_CONCURRENCY と同じ範囲） */
+export const WORKER_CONCURRENCY_RANGE = { min: 1, max: 64 } as const
+
+/** PATCH /api/workers/:workerId */
+export interface UpdateWorkerRequest {
+  name?: string
+  /** null = 上限なし */
+  concurrencyLimit?: number | null
+}
 
 /** Worker 登録時に選択できる Engine（仕様書 §41） */
 export const SELECTABLE_ENGINES = ["VOICEVOX", "AivisSpeech", "COEIROINK"] as const

@@ -15,6 +15,7 @@ import {
   MAX_CHARACTERS_RANGE,
   VOICE_PARAM_RANGE,
   VOICE_PREVIEW_TEXT_LENGTH,
+  WORKER_CONCURRENCY_RANGE,
   WORKER_NAME_LENGTH,
 } from "../constants"
 import { ENGINE_IDS, type EngineId } from "../engines"
@@ -274,7 +275,12 @@ export interface Worker {
   status: WorkerStatus
   engines: WorkerEngine[]
   runningJobs: number
+  /** 実際に使う同時処理の数 = min(Worker の申告, 上限) */
   maxConcurrency: number
+  /** Worker が申告した同時処理の数（Worker の MAX_CONCURRENCY） */
+  workerConcurrency?: number
+  /** Web で設定した同時処理の上限（無ければ上限なし） */
+  concurrencyLimit?: number
   latency?: number
   lastSeenAt?: string
   queue?: number
@@ -297,7 +303,22 @@ export interface CreateWorkerResponse {
   token: string
 }
 
-export const renameWorkerRequestSchema = z.object({ name: trimmed(WORKER_NAME_LENGTH) }).strict()
+/** 同時処理の上限（null = 上限なし） */
+export const concurrencyLimitSchema = z
+  .number()
+  .int()
+  .min(WORKER_CONCURRENCY_RANGE.min)
+  .max(WORKER_CONCURRENCY_RANGE.max)
+  .nullable()
+
+/** PATCH /api/workers/:workerId（自鯖Worker の所有者） */
+export const updateWorkerRequestSchema = z
+  .object({ name: trimmed(WORKER_NAME_LENGTH), concurrencyLimit: concurrencyLimitSchema })
+  .partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update." })
+
+export type UpdateWorkerRequest = z.infer<typeof updateWorkerRequestSchema>
 
 export const workerGuildScopeSchema = z.enum(["none", "server", "personal"])
 export type WorkerGuildScope = z.infer<typeof workerGuildScopeSchema>
@@ -512,6 +533,7 @@ export const updateAdminWorkerRequestSchema = z
       .max(ENGINE_IDS.length)
       .refine((v) => new Set(v).size === v.length, { message: "disabledEngines must be unique." }),
     guildScope: z.enum(["all", "selected"]),
+    concurrencyLimit: concurrencyLimitSchema,
   })
   .partial()
   .strict()

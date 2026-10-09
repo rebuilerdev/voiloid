@@ -13,6 +13,7 @@ export const workerSelect = {
   type: true,
   status: true,
   maxConcurrency: true,
+  concurrencyLimit: true,
   enabled: true,
   restrictedToGuilds: true,
   version: true,
@@ -79,6 +80,7 @@ export function workerRepository(db: DbClient) {
           ownerUserId: true,
           enabled: true,
           deletedAt: true,
+          concurrencyLimit: true,
           credential: { select: { secretHash: true, revokedAt: true } },
           // 運営者が止めたエンジン（振り分け・声の一覧に使わない）
           engines: { where: { enabled: false }, select: { engineId: true } },
@@ -105,6 +107,11 @@ export function workerRepository(db: DbClient) {
         where: { workerId: id, engineId: { notIn: disabled } },
         data: { enabled: true },
       })
+    },
+
+    /** 同時処理の上限（null = 上限なし） */
+    setConcurrencyLimit(id: string, limit: number | null): Promise<WorkerRecord> {
+      return db.worker.update({ where: { id }, data: { concurrencyLimit: limit }, select: workerSelect })
     },
 
     /** 公式Worker の担当: true = 接続先に指定したサーバーだけ */

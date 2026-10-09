@@ -36,10 +36,12 @@ import type { UsagePeriod, UsageSummary } from "@/types/usage"
 import type { MemberGuild, UpdateMeRequest } from "@/types/user"
 import type { VoicePreviewRequest } from "@/types/voice"
 import {
+  WORKER_CONCURRENCY_RANGE,
   WORKER_NAME_LENGTH,
   type CreateWorkerRequest,
   type Worker,
   type UpdateWorkerGuildsRequest,
+  type UpdateWorkerRequest,
   type WorkerGuildConnection,
 } from "@/types/worker"
 
@@ -207,19 +209,30 @@ function toWorker(w: MockWorker): Worker {
   // Online の Worker は「数秒前」に通信したことにする
   const secondsAgo = isUp(w) ? Math.floor(Math.random() * 5) + 1 : w.lastSeenSecondsAgo
   const jitter = isUp(w) ? Math.round((Math.random() - 0.5) * 4) : 0
+  const max = w.concurrencyLimit ? Math.min(w.maxConcurrency, w.concurrencyLimit) : w.maxConcurrency
   return {
     id: w.id,
     name: w.name,
     type: w.type,
     status: w.status,
     engines: w.engines,
-    runningJobs: isUp(w) ? Math.max(0, Math.min(w.maxConcurrency, w.runningJobs + (Math.random() < 0.3 ? 1 : 0))) : 0,
-    maxConcurrency: w.maxConcurrency,
+    runningJobs: isUp(w) ? Math.max(0, Math.min(max, w.runningJobs + (Math.random() < 0.3 ? 1 : 0))) : 0,
+    maxConcurrency: max,
+    workerConcurrency: w.maxConcurrency,
+    concurrencyLimit: w.concurrencyLimit,
     latency: w.latency !== undefined ? w.latency + jitter : undefined,
     lastSeenAt: new Date(Date.now() - secondsAgo * 1000).toISOString(),
     queue: w.queue,
     createdAt: w.createdAt,
   }
+}
+
+/** 同時処理の上限: null（上限なし）か 1〜64 の整数 */
+function validConcurrencyLimit(value: number | null) {
+  return (
+    value === null ||
+    (Number.isInteger(value) && value >= WORKER_CONCURRENCY_RANGE.min && value <= WORKER_CONCURRENCY_RANGE.max)
+  )
 }
 
 function findGuild(id: string) {
@@ -462,9 +475,13 @@ const adminRoutes: [method: string, pattern: string, handler: Handler][] = [
     ({ params, body }) => {
       const worker = findAnyWorker(params.workerId)
       if (!worker) return notFound()
-      const { name, enabled, disabledEngines, guildScope } = (body ?? {}) as UpdateAdminWorkerRequest
-      if (name === undefined && enabled === undefined && disabledEngines === undefined && guildScope === undefined) {
-        return fail(400, "VALIDATION_ERROR", "Nothing to update.")
+      const input = (body ?? {}) as UpdateAdminWorkerRequest
+      const { name, enabled, disabledEngines, guildScope, concurrencyLimit } = input
+      if (Object.keys(input).length === 0) return fail(400, "VALIDATION_ERROR", "Nothing to update.")
+      if (concurrencyLimit !== undefined) {
+        if (!validConcurrencyLimit(concurrencyLimit)) return fail(400, "VALIDATION_ERROR", "concurrencyLimit must be 1-64.")
+        worker.concurrencyLimit = concurrencyLimit ?? undefined
+        recordAudit("admin.worker.update_concurrency", "worker", worker.id)
       }
       if (guildScope !== undefined && worker.type !== "official") {
         return fail(400, "VALIDATION_ERROR", "Only official workers can be assigned to servers.")
@@ -1177,12 +1194,16 @@ const routes: [method: string, pattern: string, handler: Handler][] = [
     ({ params, body }) => {
       const w = findPrivateWorker(params.workerId)
       if (!w) return notFound()
-      const { name } = body as { name?: string }
+      const { name, concurrencyLimit } = body as UpdateWorkerRequest
       if (name !== undefined) {
         if (!inRange(name, WORKER_NAME_LENGTH)) {
           return fail(400, "VALIDATION_ERROR", "Worker name must be 1-64 characters.")
         }
         w.name = name.trim()
+      }
+      if (concurrencyLimit !== undefined) {
+        if (!validConcurrencyLimit(concurrencyLimit)) return fail(400, "VALIDATION_ERROR", "concurrencyLimit must be 1-64.")
+        w.concurrencyLimit = concurrencyLimit ?? undefined
       }
       return ok(toWorker(w))
     },

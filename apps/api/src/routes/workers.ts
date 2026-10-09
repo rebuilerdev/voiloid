@@ -1,6 +1,6 @@
 import {
   createWorkerRequestSchema,
-  renameWorkerRequestSchema,
+  updateWorkerRequestSchema,
   updateWorkerGuildsRequestSchema,
 } from "@voiloid/shared/contracts"
 import type { FastifyInstance } from "fastify"
@@ -24,8 +24,8 @@ export function workerRoutes(app: FastifyInstance, workers: WorkerService) {
 
   app.patch("/api/workers/:workerId", async (request) => {
     const session = requireSession(request)
-    const { name } = parse(renameWorkerRequestSchema, request.body)
-    return ok(await workers.rename(session, workerIdParam(request), name))
+    const input = parse(updateWorkerRequestSchema, request.body)
+    return ok(await workers.update(session, workerIdParam(request), input))
   })
 
   app.delete("/api/workers/:workerId", async (request) => {

@@ -79,6 +79,18 @@ test("サーバーの Voice タブでエンジンをオフにでき、デフォ�
   expect(errors).toEqual([])
 })
 
+test("自鯖Worker の所有者も、同時処理の上限を設定できる", async ({ page }) => {
+  const errors = trackErrors(page)
+  await login(page, "/workers/wrk_01HGAMINGPC")
+  const input = page.getByRole("spinbutton", { name: "上限（1〜64）" }).filter({ visible: true })
+  const form = page.locator("form").filter({ has: input })
+  await input.fill("1")
+  await form.getByRole("button", { name: "保存" }).click()
+  await expect(page.getByText("同時処理の上限を 1 にしました")).toBeVisible()
+  await expect(page.getByText("/ 1", { exact: true }).filter({ visible: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test("主要なページがエラーなく表示される", async ({ page }) => {
   const errors = trackErrors(page)
   await login(page)

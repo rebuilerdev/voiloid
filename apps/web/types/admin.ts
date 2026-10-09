@@ -141,6 +141,8 @@ export interface UpdateAdminWorkerRequest {
   enabled?: boolean
   disabledEngines?: string[]
   guildScope?: "all" | "selected"
+  /** null = 上限なし */
+  concurrencyLimit?: number | null
 }
 
 /* ---------- サービス全体の設定 ---------- */

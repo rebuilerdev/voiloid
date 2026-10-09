@@ -22,6 +22,7 @@ import type {
   CreateWorkerRequest,
   CreateWorkerResponse,
   UpdateWorkerGuildsRequest,
+  UpdateWorkerRequest,
   Worker,
   WorkerGuildConnection,
 } from "@voiloid/shared/contracts"
@@ -53,7 +54,11 @@ export function toApiWorker(worker: WorkerRecord, live: WorkerLive | undefined):
       version: e.engineVersion ?? undefined,
     })),
     runningJobs: live?.runningJobs ?? 0,
-    maxConcurrency: live?.maxConcurrency ?? worker.maxConcurrency,
+    maxConcurrency:
+      live?.maxConcurrency ??
+      (worker.concurrencyLimit ? Math.min(worker.maxConcurrency, worker.concurrencyLimit) : worker.maxConcurrency),
+    workerConcurrency: worker.maxConcurrency,
+    concurrencyLimit: worker.concurrencyLimit ?? undefined,
     latency: live?.latencyMs,
     lastSeenAt: live?.lastSeenAt ?? worker.lastSeenAt?.toISOString(),
     queue: live?.queue ?? 0,
@@ -105,17 +110,32 @@ export function createWorkerService(deps: AppDeps, access: AccessService, live: 
       return { worker: toApiWorker(worker, undefined), token: credential.token }
     },
 
-    async rename(session: Session, publicId: string, name: string): Promise<Worker> {
-      const worker = await owned(session, publicId)
-      const renamed = await deps.repos.workers.rename(worker.id, name)
-      await deps.repos.audit.record({
-        actorUserId: session.userId,
-        action: "worker.rename",
-        targetType: "worker",
-        targetId: publicId,
-        metadata: { name },
-      })
-      return withLive(renamed)
+    /** 名前の変更・同時処理の上限（所有者） */
+    async update(session: Session, publicId: string, input: UpdateWorkerRequest): Promise<Worker> {
+      let worker = await owned(session, publicId)
+      if (input.name !== undefined) {
+        worker = await deps.repos.workers.rename(worker.id, input.name)
+        await deps.repos.audit.record({
+          actorUserId: session.userId,
+          action: "worker.rename",
+          targetType: "worker",
+          targetId: publicId,
+          metadata: { name: input.name },
+        })
+      }
+      if (input.concurrencyLimit !== undefined && input.concurrencyLimit !== worker.concurrencyLimit) {
+        worker = await deps.repos.workers.setConcurrencyLimit(worker.id, input.concurrencyLimit)
+        await deps.repos.audit.record({
+          actorUserId: session.userId,
+          action: "worker.update_concurrency",
+          targetType: "worker",
+          targetId: publicId,
+          metadata: { concurrencyLimit: input.concurrencyLimit ?? "none" },
+        })
+        // Gateway が接続中の Worker の上限を読み直す（切断しない）
+        await live.invalidate({ kind: "worker", workerId: publicId })
+      }
+      return withLive(worker)
     },
 
     async delete(session: Session, publicId: string): Promise<void> {

@@ -18,6 +18,14 @@ export interface PendingJob {
   timer: NodeJS.Timeout
 }
 
+/** 同時処理の上限に達した Worker の、順番待ちの依頼（Gateway で待たせる） */
+export interface WaitingJob {
+  job: Omit<SynthesizeJob, "type" | "jobId">
+  resolve: (result: JobResult) => void
+  reject: (error: Error) => void
+  timer: NodeJS.Timeout
+}
+
 export interface JobResult {
   audio: Buffer
   durationMs: number | undefined
@@ -32,7 +40,14 @@ export interface ConnectedWorker {
   ownerUserId: string | null
   socket: WebSocket
   engines: Map<string, EngineReport>
+  /** 実際に使う同時処理の数 = min(Worker の申告, Web で設定した上限) */
   maxConcurrency: number
+  /** Worker が申告した同時処理の数（Worker の MAX_CONCURRENCY） */
+  reportedConcurrency?: number
+  /** Web で設定した同時処理の上限（null / undefined = 上限なし） */
+  concurrencyLimit?: number | null
+  /** 上限に達したときの順番待ち */
+  waiting?: WaitingJob[]
   version: string
   pending: Map<string, PendingJob>
   /** 連続して失敗した回数（振り分けの優先度を下げる） */
@@ -106,29 +121,87 @@ export class WorkerRegistry {
       .map((e) => e.engine)
   }
 
-  /** 負荷（実行中のジョブ / 同時実行数）。小さいほど空いている */
-  static load(worker: ConnectedWorker): number {
-    return worker.pending.size / worker.maxConcurrency
+  /** 実際に使う同時処理の数 = min(Worker の申告, Web で設定した上限) */
+  static effectiveConcurrency(reported: number, limit: number | null | undefined): number {
+    return limit ? Math.min(reported, limit) : reported
   }
 
+  /** 上限を変えたとき: 実際に使う数を更新し、空いた分だけ順番待ちを送る */
+  setConcurrencyLimit(worker: ConnectedWorker, limit: number | null): void {
+    worker.concurrencyLimit = limit
+    worker.maxConcurrency = WorkerRegistry.effectiveConcurrency(
+      worker.reportedConcurrency ?? worker.maxConcurrency,
+      limit,
+    )
+    this.next(worker)
+    void this.publishLive(worker)
+  }
+
+  /** 負荷（送ったジョブ + 順番待ち）/ 同時実行数。小さいほど空いている */
+  static load(worker: ConnectedWorker): number {
+    return (worker.pending.size + (worker.waiting?.length ?? 0)) / worker.maxConcurrency
+  }
+
+  /**
+   * 合成を依頼する。同時処理の上限に達していれば、空くまで Gateway で待たせる
+   * （待ちがジョブのタイムアウトを超えたら失敗にし、呼び出し側が次の Worker を試す）。
+   */
   dispatch(worker: ConnectedWorker, job: Omit<SynthesizeJob, "type" | "jobId">): Promise<JobResult> {
-    const jobId = randomUUID()
     return new Promise<JobResult>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        worker.pending.delete(jobId)
-        void this.publishLive(worker)
-        reject(new WorkerJobError(`worker ${worker.publicId} timed out`, worker.id))
-      }, this.jobTimeoutMs)
-      worker.pending.set(jobId, { resolve, reject, timer })
+      if (worker.pending.size < worker.maxConcurrency && !worker.waiting?.length) {
+        this.send(worker, job, resolve, reject)
+        return
+      }
+      const waiting = (worker.waiting ??= [])
+      const entry: WaitingJob = {
+        job,
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          const index = waiting.indexOf(entry)
+          if (index >= 0) waiting.splice(index, 1)
+          void this.publishLive(worker)
+          reject(new WorkerJobError(`worker ${worker.publicId} is busy`, worker.id))
+        }, this.jobTimeoutMs),
+      }
+      waiting.push(entry)
       void this.publishLive(worker)
-      const message: SynthesizeJob = { type: "synthesize", jobId, ...job }
-      worker.socket.send(JSON.stringify(message), (error) => {
-        if (!error) return
-        clearTimeout(timer)
-        worker.pending.delete(jobId)
-        reject(new WorkerJobError(`failed to send a job to ${worker.publicId}`, worker.id))
-      })
     })
+  }
+
+  private send(
+    worker: ConnectedWorker,
+    job: Omit<SynthesizeJob, "type" | "jobId">,
+    resolve: (result: JobResult) => void,
+    reject: (error: Error) => void,
+  ): void {
+    const jobId = randomUUID()
+    const timer = setTimeout(() => {
+      worker.pending.delete(jobId)
+      this.next(worker)
+      void this.publishLive(worker)
+      reject(new WorkerJobError(`worker ${worker.publicId} timed out`, worker.id))
+    }, this.jobTimeoutMs)
+    worker.pending.set(jobId, { resolve, reject, timer })
+    void this.publishLive(worker)
+    const message: SynthesizeJob = { type: "synthesize", jobId, ...job }
+    worker.socket.send(JSON.stringify(message), (error) => {
+      if (!error) return
+      clearTimeout(timer)
+      worker.pending.delete(jobId)
+      this.next(worker)
+      reject(new WorkerJobError(`failed to send a job to ${worker.publicId}`, worker.id))
+    })
+  }
+
+  /** 空いた分だけ、順番待ちのジョブを送る */
+  private next(worker: ConnectedWorker): void {
+    while (worker.waiting?.length && worker.pending.size < worker.maxConcurrency) {
+      const entry = worker.waiting.shift()
+      if (!entry) return
+      clearTimeout(entry.timer)
+      this.send(worker, entry.job, entry.resolve, entry.reject)
+    }
   }
 
   /** Worker から結果が届いた */
@@ -140,6 +213,7 @@ export class WorkerRegistry {
     if (!job) return
     worker.pending.delete(result.jobId)
     clearTimeout(job.timer)
+    this.next(worker)
     void this.publishLive(worker)
     if (result.ok) {
       job.resolve({ audio: Buffer.from(result.audio, "base64"), durationMs: result.durationMs })
@@ -148,13 +222,18 @@ export class WorkerRegistry {
     }
   }
 
-  /** 切断時: 実行中のジョブをすべて失敗にする */
+  /** 切断時: 実行中・順番待ちのジョブをすべて失敗にする */
   failAll(worker: ConnectedWorker, reason: string): void {
     for (const job of worker.pending.values()) {
       clearTimeout(job.timer)
       job.reject(new WorkerJobError(reason, worker.id))
     }
     worker.pending.clear()
+    for (const entry of worker.waiting ?? []) {
+      clearTimeout(entry.timer)
+      entry.reject(new WorkerJobError(reason, worker.id))
+    }
+    if (worker.waiting) worker.waiting.length = 0
   }
 
   liveState(worker: ConnectedWorker): WorkerLive {
@@ -163,7 +242,8 @@ export class WorkerRegistry {
     return {
       status: worker.pending.size >= worker.maxConcurrency ? "busy" : unhealthy ? "degraded" : "online",
       runningJobs: running,
-      queue: Math.max(0, worker.pending.size - worker.maxConcurrency),
+      // 上限を下げた直後は、送り済みのジョブが上限を超えていることがある
+      queue: Math.max(0, worker.pending.size - worker.maxConcurrency) + (worker.waiting?.length ?? 0),
       maxConcurrency: worker.maxConcurrency,
       latencyMs: worker.latencyMs,
       lastSeenAt: worker.lastSeenAt.toISOString(),

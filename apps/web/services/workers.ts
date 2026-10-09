@@ -2,6 +2,7 @@ import type {
   CreateWorkerRequest,
   CreateWorkerResponse,
   UpdateWorkerGuildsRequest,
+  UpdateWorkerRequest,
   Worker,
   WorkerGuildConnection,
 } from "@/types/worker"
@@ -22,7 +23,12 @@ export function getWorker(workerId: string) {
 }
 
 export function renameWorker(workerId: string, name: string) {
-  return apiRequest<Worker>("PATCH", base(workerId), { name })
+  return updateWorker(workerId, { name })
+}
+
+/** 名前・同時処理の上限（自鯖Worker の所有者） */
+export function updateWorker(workerId: string, input: UpdateWorkerRequest) {
+  return apiRequest<Worker>("PATCH", base(workerId), input)
 }
 
 export function deleteWorker(workerId: string) {

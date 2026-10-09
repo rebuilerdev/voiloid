@@ -36,7 +36,13 @@ import type { ServiceStatus } from "@/types/status"
 import type { UsageSummary } from "@/types/usage"
 import type { CurrentUser, MemberGuild, UpdateMeRequest } from "@/types/user"
 import type { Voice, VoicePreview, VoicePreviewRequest, VoiceSettings } from "@/types/voice"
-import type { CreateWorkerResponse, UpdateWorkerGuildsRequest, Worker, WorkerGuildConnection } from "@/types/worker"
+import type {
+  CreateWorkerResponse,
+  UpdateWorkerGuildsRequest,
+  UpdateWorkerRequest,
+  Worker,
+  WorkerGuildConnection,
+} from "@/types/worker"
 
 type Assert<T extends true> = T
 /** API のレスポンスを Web の型として扱えるか */
@@ -85,5 +91,6 @@ export type ContractChecks = [
   Assert<SameKeys<Contract.UpdateWorkerGuildsRequest, UpdateWorkerGuildsRequest>>,
   Assert<SameKeys<Contract.UpdateGuildSettingsRequest, GuildSettings>>,
   Assert<SameKeys<Contract.UpdateAdminWorkerRequest, UpdateAdminWorkerRequest>>,
+  Assert<SameKeys<Contract.UpdateWorkerRequest, UpdateWorkerRequest>>,
   Assert<SameKeys<Contract.UpdateSystemSettingsRequest, UpdateSystemSettingsRequest>>,
 ]

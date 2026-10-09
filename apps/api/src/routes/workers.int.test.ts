@@ -108,6 +108,38 @@ describe("Worker の変更・削除・トークン再発行", () => {
     ).toBe(400)
   })
 
+  it("同時処理の上限を設定・解除でき、Gateway に通知して監査ログに残す。範囲外は 400、他人の Worker は 404", async () => {
+    const user = await login(h)
+    const { worker } = await createWorker(user)
+    await h.db.worker.update({ where: { publicId: worker.id }, data: { maxConcurrency: 8 } })
+    const subscriber = h.redis.duplicate()
+    const messages: string[] = []
+    await subscriber.subscribe(redisKeys.invalidation())
+    subscriber.on("message", (_c, m: string) => messages.push(m))
+    try {
+      const url = `/api/workers/${worker.id}`
+      const limited = await call(h, "PATCH", url, { user, body: { concurrencyLimit: 3 } })
+      expect(limited.data()).toMatchObject({ concurrencyLimit: 3, workerConcurrency: 8, maxConcurrency: 3 })
+      const cleared = await call(h, "PATCH", url, { user, body: { concurrencyLimit: null } })
+      expect(cleared.data()).toMatchObject({ workerConcurrency: 8, maxConcurrency: 8 })
+      expect(cleared.data()).not.toHaveProperty("concurrencyLimit")
+      for (const value of [0, 65, 1.5]) {
+        expect((await call(h, "PATCH", url, { user, body: { concurrencyLimit: value } })).statusCode).toBe(400)
+      }
+      expect((await call(h, "PATCH", url, { user, body: {} })).statusCode).toBe(400)
+
+      const other = await login(h)
+      expect((await call(h, "PATCH", url, { user: other, body: { concurrencyLimit: 2 } })).statusCode).toBe(404)
+
+      await new Promise((r) => setTimeout(r, 50))
+      expect(messages.filter((m) => m.includes(worker.id))).toHaveLength(2)
+      const actions = await h.db.auditLog.findMany({ where: { action: "worker.update_concurrency" } })
+      expect(actions.map((a) => a.metadata)).toEqual([{ concurrencyLimit: 3 }, { concurrencyLimit: "none" }])
+    } finally {
+      subscriber.disconnect()
+    }
+  })
+
   it("削除すると一覧から消え、Gateway に切断を通知する", async () => {
     const user = await login(h)
     const { worker } = await createWorker(user)

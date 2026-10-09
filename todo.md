@@ -373,3 +373,15 @@ Bot / API / Gateway ──▶ Redis（セッション・リアルタイム状態
 
 - [x] `compose.yaml`: `aivisspeech` サービス（`official-worker` プロファイル）を追加し、公式Worker のエンジンを VOICEVOX・AivisSpeech にする
 - [x] docs（運用ガイド 5-2・構築の `.env` の表）を合わせる
+
+---
+
+# Worker の同時処理の上限を Web から設定する（2026-10-10）
+
+Worker の同時処理の数は、今は Worker の環境変数 `MAX_CONCURRENCY` でしか決められない。Web から上限を設定できるようにする（Worker の申告と上限の小さいほうを使う）。
+
+- [x] DB: `Worker.concurrencyLimit`（NULL = 上限なし。1〜64）。Migration は列の追加のみ
+- [x] Gateway: 実際に使う数 = min(申告, 上限)。上限を超えた依頼は Gateway で順番待ちにする（古い Worker にも効く）。待ちが長すぎたら次の Worker へ。設定の変更は切断せずに反映する
+- [x] API: 運営者（`PATCH /api/admin/workers/:id`、editor 以上）と所有者（`PATCH /api/workers/:id`）が設定できる。監査ログに残す。Worker の申告値（`workerConcurrency`）と上限（`concurrencyLimit`）を返す
+- [x] Web: 運営コンソールの Worker の詳細と、自鯖Worker の詳細に「同時処理の上限」。モック・ja / en・E2E
+- [x] テスト（Gateway の順番待ち・上限の反映、API）、docs

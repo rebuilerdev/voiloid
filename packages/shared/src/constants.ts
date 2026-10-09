@@ -22,6 +22,9 @@ export const DICTIONARY_MAX_ENTRIES = 1000
 
 export const WORKER_NAME_LENGTH = { min: 1, max: 64 } as const
 
+/** Worker の同時処理の数（Worker の MAX_CONCURRENCY・Web で設定する上限） */
+export const WORKER_CONCURRENCY_RANGE = { min: 1, max: 64 } as const
+
 export const BOT_NICKNAME_LENGTH = { min: 1, max: 32 } as const
 
 export const BOT_AVATAR = {

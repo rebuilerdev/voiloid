@@ -20,7 +20,7 @@ import {
 import type { Logger } from "pino"
 import { WebSocketServer, type RawData, type WebSocket } from "ws"
 
-import type { WorkerRegistry, ConnectedWorker } from "./registry"
+import { WorkerRegistry, type ConnectedWorker } from "./registry"
 
 export const WORKER_PATH = "/worker"
 /** DB の lastSeenAt は書き込みを減らすため間引いて更新する */
@@ -36,6 +36,7 @@ interface AuthenticatedWorker {
   ownerUserId: string | null
   disabledEngines: Set<string>
   secretHash: string
+  concurrencyLimit: number | null
 }
 
 export interface WorkerServerOptions {
@@ -84,6 +85,7 @@ export function createWorkerServer(options: WorkerServerOptions) {
       ownerUserId: worker.ownerUserId,
       disabledEngines: new Set(worker.engines.map((e) => e.engineId)),
       secretHash: worker.credential.secretHash,
+      concurrencyLimit: worker.concurrencyLimit,
     }
   }
 
@@ -142,7 +144,9 @@ export function createWorkerServer(options: WorkerServerOptions) {
           ownerUserId: auth.ownerUserId,
           socket,
           engines: new Map(msg.engines.map((e) => [e.engine, e])),
-          maxConcurrency: msg.maxConcurrency,
+          maxConcurrency: WorkerRegistry.effectiveConcurrency(msg.maxConcurrency, auth.concurrencyLimit),
+          reportedConcurrency: msg.maxConcurrency,
+          concurrencyLimit: auth.concurrencyLimit,
           version: msg.workerVersion,
           pending: new Map(),
           failures: 0,
@@ -252,7 +256,7 @@ export function createWorkerServer(options: WorkerServerOptions) {
      * Worker の設定が変わったときに、接続中の Worker に反映する。
      * - 運営者の「切断」（reconnect）: すぐに再接続してよいコードで切断する
      * - 削除・メンテナンス・トークン再発行: 再接続しても受け付けないため、DISABLED で切断する
-     * - それ以外（エンジンのオンオフなど）: 切断せず、止めたエンジンを読み直す
+     * - それ以外（エンジンのオンオフ・同時処理の上限など）: 切断せず、読み直して反映する
      */
     async refresh(publicId: string, options: { reconnect?: boolean } = {}): Promise<void> {
       const live = registry.findByPublicId(publicId)
@@ -273,6 +277,7 @@ export function createWorkerServer(options: WorkerServerOptions) {
         return
       }
       live.disabledEngines = new Set(worker.engines.map((e) => e.engineId))
+      registry.setConcurrencyLimit(live, worker.concurrencyLimit)
       await registry.publishLive(live)
     },
 

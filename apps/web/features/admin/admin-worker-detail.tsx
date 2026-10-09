@@ -30,6 +30,7 @@ import type { AdminGuild, AdminWorker, AdminWorkerConnection } from "@/types/adm
 
 import { runAction } from "@/features/admin/run-action"
 import { MaintenanceBadge, WorkerAdminMenu } from "@/features/admin/worker-admin-menu"
+import { WorkerConcurrencyLimit } from "@/features/workers/worker-concurrency-limit"
 import { WorkerMetrics } from "@/features/workers/worker-metrics"
 import { WorkerStatusBadge } from "@/features/workers/worker-status-badge"
 
@@ -104,8 +105,15 @@ export function AdminWorkerDetail({ initial, canEdit }: { initial: AdminWorker; 
         <CardHeader>
           <CardTitle>{t.workerDetail.performance}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           <WorkerMetrics worker={worker} />
+          <WorkerConcurrencyLimit
+            key={worker.concurrencyLimit ?? "none"}
+            worker={worker}
+            canEdit={canEdit}
+            save={(limit) => updateAdminWorker(worker.id, { concurrencyLimit: limit })}
+            onSaved={setWorker}
+          />
         </CardContent>
       </Card>
 

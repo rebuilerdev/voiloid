@@ -10,12 +10,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { usePolling } from "@/hooks/use-polling"
-import { getWorker } from "@/services/workers"
+import { getWorker, updateWorker } from "@/services/workers"
 import type { Worker, WorkerGuildConnection } from "@/types/worker"
 
 import { WorkerDangerZone } from "@/features/workers/worker-danger-zone"
 import { WorkerEngineList } from "@/features/workers/worker-engine-list"
 import { WorkerGuildConnections } from "@/features/workers/worker-guild-connections"
+import { WorkerConcurrencyLimit } from "@/features/workers/worker-concurrency-limit"
 import { WorkerMetrics } from "@/features/workers/worker-metrics"
 import { WorkerRenameDialog } from "@/features/workers/worker-rename-dialog"
 import { WorkerStatusBadge } from "@/features/workers/worker-status-badge"
@@ -92,8 +93,15 @@ export function WorkerDetailView({
         <CardHeader>
           <CardTitle>{t.workerDetail.performance}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           <WorkerMetrics worker={worker} />
+          <WorkerConcurrencyLimit
+            key={worker.concurrencyLimit ?? "none"}
+            worker={worker}
+            canEdit
+            save={(limit) => updateWorker(worker.id, { concurrencyLimit: limit })}
+            onSaved={setWorker}
+          />
         </CardContent>
       </Card>
 
