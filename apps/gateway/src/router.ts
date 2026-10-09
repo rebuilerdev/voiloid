@@ -203,7 +203,7 @@ export function createRouter(deps: { repos: Repositories; registry: WorkerRegist
       for (const worker of registry.list()) {
         if (worker.type !== "official" && worker.ownerUserId !== userId) continue
         for (const engine of worker.engines.values()) {
-          if (!engine.healthy) continue
+          if (!engine.healthy || worker.disabledEngines?.has(engine.engine)) continue
           for (const speaker of engine.speakers) {
             for (const style of speaker.styles) {
               voices.set(`${engine.engine}:${speaker.id}:${style.id}`, {

@@ -75,6 +75,10 @@ export function listPrivateWorkers(params: { query?: string; cursor?: string; st
   return apiRequest<Page<AdminWorker>>("GET", `${base}/private-workers${query(params)}`)
 }
 
+export function getAdminWorker(workerId: string) {
+  return apiRequest<AdminWorker>("GET", worker(workerId))
+}
+
 export function updateAdminWorker(workerId: string, input: UpdateAdminWorkerRequest) {
   return apiRequest<AdminWorker>("PATCH", worker(workerId), input)
 }

@@ -3,7 +3,7 @@
  */
 import { createTestUser, createTestWorker, snowflake } from "@voiloid/database/testing"
 import { redisKeys } from "@voiloid/shared/protocol"
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { call, createHarness, installGuild, login, NO_PERMISSIONS, OPERATOR_ID, type Harness } from "../../test/harness"
 
@@ -329,12 +329,57 @@ describe("Worker の操作", () => {
         .statusCode,
     ).toBe(404)
 
+    // 公式Worker は「担当するサーバー」として、サーバーで共有する扱いでだけ指定できる
     const official = await createTestWorker(h.db, { type: "OFFICIAL" })
-    const res = await call(h, "PUT", `/api/admin/workers/${official.publicId}/connections`, {
-      user,
-      body: { connections: [] },
-    })
+    const officialUrl = `/api/admin/workers/${official.publicId}/connections`
+    const personal = { connections: [{ guildId: guild.discordGuildId, scope: "personal" }] }
+    expect((await call(h, "PUT", officialUrl, { user, body: personal })).statusCode).toBe(400)
+    const server = { connections: [{ guildId: guild.discordGuildId, scope: "server" }] }
+    expect((await call(h, "PUT", officialUrl, { user, body: server })).statusCode).toBe(200)
+  })
+
+  it("Worker の詳細を返し、エンジンの停止・公式Worker の担当サーバーを変更できる（監査ログ・通知）", async () => {
+    const user = await owner()
+    const official = await createTestWorker(h.db, { type: "OFFICIAL", engines: ["VOICEVOX", "AivisSpeech"] })
+    const url = `/api/admin/workers/${official.publicId}`
+    const subscriber = h.redis.duplicate()
+    const messages: unknown[] = []
+    await subscriber.subscribe(redisKeys.invalidation())
+    subscriber.on("message", (_channel: string, raw: string) => messages.push(JSON.parse(raw)))
+    try {
+      expect((await call(h, "GET", url, { user })).data()).toMatchObject({
+        id: official.publicId,
+        type: "official",
+        disabledEngines: [],
+        guildScope: "all",
+        connections: 0,
+      })
+
+      const engines = await call(h, "PATCH", url, { user, body: { disabledEngines: ["AivisSpeech"] } })
+      expect(engines.data()).toMatchObject({ disabledEngines: ["AivisSpeech"] })
+      // 同じ内容なら記録・通知しない
+      await call(h, "PATCH", url, { user, body: { disabledEngines: ["AivisSpeech"] } })
+      expect((await call(h, "PATCH", url, { user, body: { disabledEngines: ["COEIROINK"] } })).statusCode).toBe(400)
+
+      const scope = await call(h, "PATCH", url, { user, body: { guildScope: "selected" } })
+      expect(scope.data()).toMatchObject({ guildScope: "selected" })
+
+      await vi.waitFor(() => expect(messages).toHaveLength(2))
+      expect(messages).toEqual([{ kind: "worker", workerId: official.publicId }, { kind: "routing" }])
+      const actions = (await h.db.auditLog.findMany({ orderBy: { createdAt: "asc" } })).map((a) => a.action)
+      expect(actions).toEqual(["admin.worker.update_engines", "admin.worker.update_scope"])
+    } finally {
+      subscriber.disconnect()
+    }
+
+    // 自鯖Worker には担当サーバーを設定できない。存在しない Worker は 404
+    const someone = await createTestUser(h.db)
+    const own = await createTestWorker(h.db, { ownerUserId: someone.id })
+    const privateDetail = (await call(h, "GET", `/api/admin/workers/${own.publicId}`, { user })).data()
+    expect(privateDetail).not.toHaveProperty("guildScope")
+    const res = await call(h, "PATCH", `/api/admin/workers/${own.publicId}`, { user, body: { guildScope: "all" } })
     expect(res.statusCode).toBe(400)
+    expect((await call(h, "GET", "/api/admin/workers/missing", { user })).statusCode).toBe(404)
   })
 })
 

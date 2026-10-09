@@ -14,11 +14,20 @@ export const workerSelect = {
   status: true,
   maxConcurrency: true,
   enabled: true,
+  restrictedToGuilds: true,
   version: true,
   lastSeenAt: true,
   createdAt: true,
   engines: {
-    select: { engineId: true, engineType: true, engineName: true, engineVersion: true, health: true, lastSeenAt: true },
+    select: {
+      engineId: true,
+      engineType: true,
+      engineName: true,
+      engineVersion: true,
+      health: true,
+      enabled: true,
+      lastSeenAt: true,
+    },
     orderBy: { engineId: "asc" },
   },
 } satisfies Prisma.WorkerSelect
@@ -71,6 +80,8 @@ export function workerRepository(db: DbClient) {
           enabled: true,
           deletedAt: true,
           credential: { select: { secretHash: true, revokedAt: true } },
+          // 運営者が止めたエンジン（振り分け・声の一覧に使わない）
+          engines: { where: { enabled: false }, select: { engineId: true } },
         },
       })
     },
@@ -82,6 +93,23 @@ export function workerRepository(db: DbClient) {
         data: { enabled, status: enabled ? WorkerStatus.OFFLINE : WorkerStatus.DISABLED },
         select: workerSelect,
       })
+    },
+
+    /** 運営者によるエンジンの停止（disabled に含めたものを止め、それ以外を動かす） */
+    async setDisabledEngines(id: string, disabled: string[]): Promise<void> {
+      await db.workerEngine.updateMany({
+        where: { workerId: id, engineId: { in: disabled } },
+        data: { enabled: false },
+      })
+      await db.workerEngine.updateMany({
+        where: { workerId: id, engineId: { notIn: disabled } },
+        data: { enabled: true },
+      })
+    },
+
+    /** 公式Worker の担当: true = 接続先に指定したサーバーだけ */
+    setRestrictedToGuilds(id: string, restricted: boolean): Promise<WorkerRecord> {
+      return db.worker.update({ where: { id }, data: { restrictedToGuilds: restricted }, select: workerSelect })
     },
 
     rename(id: string, name: string): Promise<WorkerRecord> {
@@ -141,7 +169,8 @@ export function workerRepository(db: DbClient) {
           name: true,
           type: true,
           ownerUserId: true,
-          engines: { where: { health: { not: EngineHealth.UNHEALTHY } }, select: { engineId: true } },
+          restrictedToGuilds: true,
+          engines: { where: { health: { not: EngineHealth.UNHEALTHY }, enabled: true }, select: { engineId: true } },
           guildPermissions: { where: { guildId: { in: guildIds } }, select: { guildId: true, scope: true } },
         },
       })

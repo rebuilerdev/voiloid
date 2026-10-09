@@ -39,6 +39,10 @@ export type MockWorker = {
   connections: Record<string, Exclude<WorkerGuildScope, "none">>
   /** 登録直後の Worker が「接続済み」になる時刻（モックの接続シミュレーション） */
   connectsAt?: number
+  /** 運営者が止めたエンジン */
+  disabledEngines?: string[]
+  /** 公式Worker のみ: 接続先（connections）に指定したサーバーだけを担当する */
+  restricted?: boolean
 }
 
 export const user: CurrentUser = {
@@ -122,6 +126,7 @@ export function defaultGuildSettings(index: number): GuildSettings {
       index % 2 === 0
         ? { engine: "VOICEVOX", speakerId: "vv-zundamon", styleId: "3", speed: 1.1, pitch: 0, intonation: 1 }
         : { engine: "VOICEVOX", speakerId: "vv-tsumugi", styleId: "8", speed: 1, pitch: 0, intonation: 1 },
+    disabledEngines: [],
   }
 }
 

@@ -87,6 +87,8 @@ export interface GuildSettings {
   fallbackToOfficial: boolean
   /** サーバーのデフォルト音声。マイボイス未設定・使えないメンバーに使う */
   voice: VoiceSettings
+  /** このサーバーで使わないエンジン（声の選択肢・読み上げから外す）。デフォルト音声のエンジンは含められない */
+  disabledEngines: string[]
 }
 
 export const MAX_CHARACTERS_RANGE = { min: 1, max: 1000 } as const

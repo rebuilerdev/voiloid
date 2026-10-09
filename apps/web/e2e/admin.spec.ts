@@ -182,3 +182,28 @@ test("運営者を追加して権限を変更し、外せる。オーナーは�
   await expect(page.getByRole("row", { name: /本の虫/ })).toHaveCount(0)
   await expect(page.getByRole("row", { name: /すーたん/ }).getByRole("button")).toHaveCount(0)
 })
+
+test("公式Worker の詳細で、エンジンを止め、担当するサーバーを指定できる", async ({ page }) => {
+  const errors = trackErrors(page)
+  await login(page, "/admin/workers")
+  await page.getByRole("link", { name: "official-tokyo-02 の詳細" }).click()
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("official-tokyo-02")
+
+  // エンジンのオンオフ
+  const aivis = page.getByRole("switch", { name: "AivisSpeech を使う" })
+  await expect(aivis).toBeChecked()
+  await aivis.click()
+  await expect(page.getByText("AivisSpeech をオフにしました")).toBeVisible()
+  await expect(aivis).not.toBeChecked()
+
+  // 担当するサーバー: 指定したサーバーだけ → サーバーが無ければ警告 → 検索して追加 → 外す
+  await page.getByRole("radio", { name: /指定したサーバーだけ/ }).click()
+  await expect(page.getByText("サーバーを指定していないため、どのサーバーでも使われません。")).toBeVisible()
+  await page.getByRole("searchbox", { name: "サーバー名で検索" }).fill("ずんだ")
+  await page.getByRole("button", { name: "追加" }).click()
+  const assigned = page.getByRole("list", { name: "担当するサーバー" })
+  await expect(assigned).toContainText("ずんだ研究会")
+  await assigned.getByRole("button", { name: "外す" }).click()
+  await expect(page.getByText("サーバーを指定していないため、どのサーバーでも使われません。")).toBeVisible()
+  expect(errors).toEqual([])
+})

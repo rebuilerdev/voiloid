@@ -1,12 +1,13 @@
 /**
  * サーバーごとの Bot プロフィール（Discord: Modify Current Member）。
  * 入力 Validation → 画像 Upload → Discord API → 成功 → DB Transaction の順で行い、
- * Discord への反映に失敗した場合は DB を更新しない。
+ * Discord への反映に失敗した場合は DB を更新しない。確定後、サブボットへの反映を Bot に指示する。
  */
 import { randomUUID } from "node:crypto"
 
 import { commitBotProfile } from "@voiloid/database"
 import type { GuildBotProfile, UpdateGuildBotProfileRequest } from "@voiloid/shared/contracts"
+import { redisKeys, type BotCommand } from "@voiloid/shared/protocol"
 import { z } from "zod"
 
 import type { AppDeps } from "../deps"
@@ -113,6 +114,10 @@ export function createBotProfileService(deps: AppDeps, access: AccessService) {
         ipHash,
         asOperator ? { asOperator: true } : undefined,
       )
+
+      // 4. サブボットにも同じプロフィールを反映する（サブボットのトークンを持つ Bot に指示する。結果は待たない）
+      const command: BotCommand = { kind: "sync-profile", id: randomUUID(), guildId: discordGuildId }
+      await deps.redis.publish(redisKeys.botCommands(), JSON.stringify(command)).catch(() => 0)
       return toApi(discordGuildId, saved)
     },
   }

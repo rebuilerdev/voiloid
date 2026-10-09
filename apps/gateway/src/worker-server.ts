@@ -34,6 +34,7 @@ interface AuthenticatedWorker {
   name: string
   type: WorkerType
   ownerUserId: string | null
+  disabledEngines: Set<string>
 }
 
 export interface WorkerServerOptions {
@@ -80,6 +81,7 @@ export function createWorkerServer(options: WorkerServerOptions) {
       name: worker.name,
       type: worker.type,
       ownerUserId: worker.ownerUserId,
+      disabledEngines: new Set(worker.engines.map((e) => e.engineId)),
     }
   }
 
@@ -144,6 +146,7 @@ export function createWorkerServer(options: WorkerServerOptions) {
           failures: 0,
           latencyMs: undefined,
           lastSeenAt: new Date(),
+          disabledEngines: auth.disabledEngines,
         }
         const previous = registry.add(worker)
         if (previous) previous.socket.close(WORKER_CLOSE.REPLACED, "replaced by a new connection")

@@ -64,6 +64,7 @@ export function toApiSettings(settings: DbGuildSettings, specificWorkerPublicId:
     fallbackToOfficial: settings.fallbackToOfficial,
     // 廃止されたエンジンが保存されていた場合は既定の声として返す
     voice: guildVoice(settings) ?? { ...DEFAULT_GUILD_VOICE },
+    disabledEngines: settings.disabledEngines,
   }
 }
 
@@ -287,6 +288,7 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
       if (input.workerMode !== undefined) patch.workerMode = workerModeToDb[input.workerMode]
       if (input.fallbackToOfficial !== undefined) patch.fallbackToOfficial = input.fallbackToOfficial
       if (input.voice !== undefined) Object.assign(patch, guildVoiceColumns(input.voice))
+      if (input.disabledEngines !== undefined) patch.disabledEngines = input.disabledEngines
 
       if (input.workerId !== undefined) {
         if (input.workerId === null) {
@@ -321,7 +323,12 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
         }
       }
 
-      // サーバーのデフォルト音声は、このサーバーで使えるエンジンに限る
+      // デフォルト音声に使っているエンジンはオフにできない（読み上げられなくなるため）
+      if (next.disabledEngines.includes(next.voiceEngineId)) {
+        throw validationError(`${next.voiceEngineId} is used by the default voice and cannot be turned off.`)
+      }
+
+      // サーバーのデフォルト音声は、このサーバーで使えるエンジン（オフにしたものを除く）に限る
       if (input.voice !== undefined) {
         const engines = (await enginesByGuild(deps, [{ id: guild.id, settings: next }], null)).get(guild.id) ?? []
         if (!engines.includes(input.voice.engine)) {

@@ -120,7 +120,16 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
       enabled: w.enabled,
       owner: w.owner ? { id: w.owner.discordUserId, name: displayName(w.owner) } : null,
       connections: w._count?.guildPermissions ?? 0,
+      disabledEngines: w.engines.filter((e) => !e.enabled).map((e) => e.engineId),
+      ...(w.type === WorkerType.OFFICIAL ? { guildScope: w.restrictedToGuilds ? "selected" : "all" } : {}),
     }))
+  }
+
+  async function workerDetail(publicId: string): Promise<AdminWorker> {
+    const row = await repos.admin.workerDetail(publicId)
+    const [worker] = row ? await toAdminWorkers([row]) : []
+    if (!worker) throw notFound("Worker")
+    return worker
   }
 
   async function anyWorker(publicId: string): Promise<WorkerRecord> {
@@ -223,9 +232,15 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
       return { worker: toApiWorker(worker, undefined), token: credential.token }
     },
 
-    /** 名前変更・メンテナンス（無効化 / 有効化） */
+    /** Worker の詳細（公式・自鯖） */
+    worker: workerDetail,
+
+    /** 名前変更・メンテナンス（無効化 / 有効化）・エンジンの停止・公式Worker の担当サーバー */
     async updateWorker(session: Session, publicId: string, input: UpdateAdminWorkerRequest): Promise<AdminWorker> {
       let worker = await anyWorker(publicId)
+      if (input.guildScope !== undefined && worker.type !== WorkerType.OFFICIAL) {
+        throw validationError("Only official workers can be assigned to servers.")
+      }
       if (input.name !== undefined) {
         worker = await repos.workers.rename(worker.id, input.name)
         await audit(session, "admin.worker.rename", { type: "worker", id: publicId }, { name: input.name })
@@ -239,9 +254,30 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
         // 無効にしたら接続を切る（再接続しても Gateway が受け付けない）
         await live.invalidate({ kind: "worker", workerId: publicId })
       }
-      const [updated] = await toAdminWorkers([worker])
-      if (!updated) throw notFound("Worker")
-      return updated
+      if (input.disabledEngines !== undefined) {
+        const current = worker.engines.filter((e) => !e.enabled).map((e) => e.engineId)
+        const known = new Set(worker.engines.map((e) => e.engineId))
+        const unknown = input.disabledEngines.find((e) => !known.has(e))
+        if (unknown) throw validationError(`${unknown} is not provided by this worker.`)
+        if (current.sort().join() !== [...input.disabledEngines].sort().join()) {
+          await repos.workers.setDisabledEngines(worker.id, input.disabledEngines)
+          await audit(
+            session,
+            "admin.worker.update_engines",
+            { type: "worker", id: publicId },
+            { disabledEngines: input.disabledEngines.join(",") },
+          )
+          // 接続中の Worker を再接続させ、Gateway が止めたエンジンを読み直す
+          await live.invalidate({ kind: "worker", workerId: publicId })
+        }
+      }
+      if (input.guildScope !== undefined && (input.guildScope === "selected") !== worker.restrictedToGuilds) {
+        worker = await repos.workers.setRestrictedToGuilds(worker.id, input.guildScope === "selected")
+        await audit(session, "admin.worker.update_scope", { type: "worker", id: publicId }, { scope: input.guildScope })
+        // 振り分けだけを再計算する（Worker は切断しない）
+        await live.invalidate({ kind: "routing" })
+      }
+      return workerDetail(publicId)
     },
 
     async regenerateToken(session: Session, publicId: string): Promise<{ token: string }> {
@@ -276,10 +312,16 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
       }))
     },
 
-    /** 自鯖Worker の接続先を置き換える（運営者は、所有者がサーバーに参加しているかに関係なく設定できる） */
+    /**
+     * 接続先を置き換える。自鯖Worker は所有者がサーバーに参加しているかに関係なく設定できる。
+     * 公式Worker は「担当するサーバー」（guildScope = selected のときに使う）
+     */
     async updateWorkerConnections(session: Session, publicId: string, input: UpdateWorkerGuildsRequest): Promise<void> {
       const worker = await anyWorker(publicId)
-      if (worker.type === WorkerType.OFFICIAL) throw validationError("Official workers are not connected to servers.")
+      // 公式Worker は「担当するサーバー」として指定する（サーバーで共有する扱い）
+      if (worker.type === WorkerType.OFFICIAL && input.connections.some((c) => c.scope !== "server")) {
+        throw validationError("Official workers can only be assigned to servers.")
+      }
       const guilds = await repos.guilds.findManyByDiscordIds(input.connections.map((c) => c.guildId))
       const byId = new Map(guilds.map((g) => [g.discordGuildId, g]))
       const connections = input.connections.map((c) => {

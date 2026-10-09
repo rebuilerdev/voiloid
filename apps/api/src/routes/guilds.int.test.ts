@@ -289,7 +289,27 @@ describe("サーバー設定", () => {
         pitch: 0,
         intonation: 1,
       },
+      disabledEngines: [],
     })
+  })
+
+  it("エンジンをオフにでき、デフォルト音声のエンジンはオフにできない。オフにしたエンジンは使えるエンジンから外す", async () => {
+    const { guild, user, url } = await setupGuild()
+    await createTestWorker(h.db, { type: "OFFICIAL", engines: ["VOICEVOX", "AivisSpeech"] })
+    const res = await call(h, "PATCH", url, { user, body: { disabledEngines: ["AivisSpeech"] } })
+    expect(res.statusCode).toBe(200)
+    expect(res.data()).toMatchObject({ disabledEngines: ["AivisSpeech"] })
+    const detail = (await call(h, "GET", `/api/guilds/${guild.discordGuildId}`, { user })).data()
+    expect(detail).toMatchObject({ availableEngines: ["VOICEVOX"] })
+
+    const defaultVoice = await call(h, "PATCH", url, { user, body: { disabledEngines: ["VOICEVOX"] } })
+    expect(defaultVoice.statusCode).toBe(400)
+    // オフにしたエンジンはデフォルト音声にできない
+    const voice = { engine: "AivisSpeech", speakerId: "s", styleId: "1", speed: 1, pitch: 0, intonation: 1 }
+    expect((await call(h, "PATCH", url, { user, body: { voice } })).statusCode).toBe(400)
+    expect(
+      (await call(h, "PATCH", url, { user, body: { disabledEngines: ["AivisSpeech", "AivisSpeech"] } })).statusCode,
+    ).toBe(400)
   })
 
   it("部分更新し、監査ログと Bot・Gateway への変更通知を行う", async () => {

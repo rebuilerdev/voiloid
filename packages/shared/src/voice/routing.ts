@@ -5,7 +5,7 @@
  * - Worker Gateway: 実際の振り分け（接続中の Worker だけを渡す）
  *
  * 声の決まり方:
- *   1. 投稿者のマイボイス（そのエンジンを投稿者が使える場合のみ）
+ *   1. 投稿者のマイボイス（そのエンジンを投稿者が使え、サーバーでオフにされていない場合のみ）
  *   2. サーバーのデフォルト音声
  * 投稿者が使える Worker = 投稿者が自分専用で接続した Worker + サーバーで使える Worker（Worker モードに従う）
  */
@@ -20,12 +20,16 @@ export interface RoutingWorker {
   /** 対象サーバーでの接続。null = 接続されていない */
   scope: WorkerScope | null
   engines: readonly string[]
+  /** 公式Worker のみ: true = 接続先に指定したサーバー（scope が null でない）だけを担当する */
+  restricted?: boolean
 }
 
 export interface RoutingSettings {
   workerMode: WorkerMode
   specificWorkerId: string | null
   fallbackToOfficial: boolean
+  /** サーバーでオフにしたエンジン（声の選択肢・読み上げに使わない） */
+  disabledEngines?: readonly string[]
 }
 
 /** 優先順の Worker グループ。前のグループから順に試し、グループ内は負荷の低いものを選ぶ */
@@ -38,7 +42,8 @@ export function serverWorkerTiers<W extends RoutingWorker>(
   settings: RoutingSettings,
   workers: readonly W[],
 ): WorkerTiers<W> {
-  const official = workers.filter((w) => w.type === "official")
+  // 担当するサーバーを指定した公式Worker は、指定されたサーバーでだけ使う
+  const official = workers.filter((w) => w.type === "official" && (!w.restricted || w.scope !== null))
   const shared = workers.filter((w) => w.type === "private" && w.scope === "server")
 
   switch (settings.workerMode) {
@@ -71,9 +76,9 @@ export function workerTiersFor<W extends RoutingWorker>(
   return userId === null ? server : nonEmpty([personalWorkers(workers, userId), ...server])
 }
 
-/** Worker 群が提供するエンジン（重複なし・昇順） */
-export function availableEngines(tiers: WorkerTiers): string[] {
-  return [...new Set(tiers.flat().flatMap((w) => w.engines))].sort()
+/** Worker 群が提供するエンジン（重複なし・昇順）。disabled（サーバーでオフにしたエンジン）は除く */
+export function availableEngines(tiers: WorkerTiers, disabled: readonly string[] = []): string[] {
+  return [...new Set(tiers.flat().flatMap((w) => w.engines))].filter((e) => !disabled.includes(e)).sort()
 }
 
 /** 指定エンジンを持つ Worker だけに絞る */
@@ -99,12 +104,15 @@ export function resolveVoice<W extends RoutingWorker>(input: {
   userId: string | null
 }): ResolvedVoice<W> | null {
   const tiers = workerTiersFor(input.settings, input.workers, input.userId)
+  const disabled = input.settings.disabledEngines ?? []
 
-  if (input.userVoice) {
+  if (input.userVoice && !disabled.includes(input.userVoice.engine)) {
     const forUser = tiersForEngine(tiers, input.userVoice.engine)
     if (forUser.length > 0) return { voice: input.userVoice, source: "user", tiers: forUser }
   }
 
+  // デフォルト音声のエンジンはオフにできない（API で検証）が、念のため合成しない
+  if (disabled.includes(input.guildVoice.engine)) return null
   const forGuild = tiersForEngine(tiers, input.guildVoice.engine)
   return forGuild.length > 0 ? { voice: input.guildVoice, source: "guild", tiers: forGuild } : null
 }

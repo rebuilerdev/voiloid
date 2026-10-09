@@ -18,6 +18,7 @@ import type { createGuildSync } from "../core/guild-sync"
 import type { Reader } from "../core/reader"
 import type { SessionManager } from "../core/sessions"
 import { toReplyOptions } from "./embeds"
+import type { ProfileSync } from "./profile"
 
 export function createClients(mainToken: string, subTokens: string[]) {
   const main = new Client({
@@ -87,6 +88,7 @@ export function registerEvents(deps: {
   sessions: SessionManager
   guildSync: ReturnType<typeof createGuildSync>
   botSync: ReturnType<typeof createBotSync>
+  profileSync: ProfileSync
   logger: Logger
 }) {
   const { main, commands, reader, sessions, logger } = deps
@@ -101,7 +103,14 @@ export function registerEvents(deps: {
   // 各 Bot（サブボットを含む）のサーバーへの参加・退出を記録する
   for (const client of deps.allClients) {
     client.on(Events.GuildCreate, (guild) => {
-      if (client.user) void deps.botSync.joined(client.user.id, guild.id).catch(() => undefined)
+      if (!client.user) return
+      void deps.botSync.joined(client.user.id, guild.id).catch(() => undefined)
+      // 後から招待したサブボットにも、サーバーのプロフィールを反映する
+      if (client !== main) {
+        void deps.profileSync
+          .apply(guild.id, client.user.id)
+          .catch((error: unknown) => logger.warn({ err: error, guild: guild.id }, "failed to sync the bot profile"))
+      }
     })
     client.on(Events.GuildDelete, (guild) => {
       if (client.user) void deps.botSync.left(client.user.id, guild.id).catch(() => undefined)

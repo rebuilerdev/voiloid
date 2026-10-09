@@ -68,7 +68,16 @@ type Dialogs = "rename" | "disable" | "disconnect" | "connections" | "token" | "
  * 運営コンソールの Worker 1 台の操作メニュー（公式Worker・自鯖Worker 共通）。
  * 発行したトークンは state にだけ保持し、保存しない。
  */
-export function WorkerAdminMenu({ worker, onChanged }: { worker: AdminWorker; onChanged: () => Promise<void> }) {
+export function WorkerAdminMenu({
+  worker,
+  onChanged,
+  onDeleted,
+}: {
+  worker: AdminWorker
+  onChanged: () => Promise<void>
+  /** 削除した後の処理（詳細ページでは一覧に戻る）。省略すると onChanged */
+  onDeleted?: () => void
+}) {
   const { t } = useI18n()
   const [dialog, setDialog] = useState<Dialogs>(null)
   const [token, setToken] = useState<string | null>(null)
@@ -198,7 +207,8 @@ export function WorkerAdminMenu({ worker, onChanged }: { worker: AdminWorker; on
         destructive
         onConfirm={async () => {
           await runAction(t, () => deleteAdminWorker(worker.id), t.admin.workerDeleted)
-          await onChanged()
+          if (onDeleted) onDeleted()
+          else await onChanged()
         }}
       />
 

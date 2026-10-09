@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { PlusIcon, SpinnerGapIcon, StackIcon, WarningIcon } from "@phosphor-icons/react"
 import { toast } from "sonner"
 
@@ -128,7 +129,13 @@ export function OfficialWorkers({ initial, canEdit }: { initial: AdminWorker[]; 
                   {shown.map((w) => (
                     <TableRow key={w.id}>
                       <TableCell>
-                        <span className="font-medium">{w.name}</span>
+                        <Link
+                          href={`/admin/workers/${w.id}`}
+                          aria-label={fmt(t.ops.openWorker, { name: w.name })}
+                          className="font-medium underline-offset-4 hover:underline"
+                        >
+                          {w.name}
+                        </Link>
                         <span className="block font-mono text-[11px] text-muted-foreground">{w.id}</span>
                       </TableCell>
                       <TableCell>

@@ -119,8 +119,12 @@ export interface AdminWorker extends Worker {
   /** false = メンテナンス中（振り分けに使わない・接続を受け付けない） */
   enabled: boolean
   owner: { id: string; name: string } | null
-  /** 接続先のサーバー数 */
+  /** 接続先のサーバー数（公式Worker は担当に指定したサーバー数） */
   connections: number
+  /** 運営者が止めたエンジン（振り分け・声の一覧に使わない） */
+  disabledEngines: string[]
+  /** 公式Worker のみ: all = 全サーバー / selected = 指定したサーバーだけ */
+  guildScope?: "all" | "selected"
 }
 
 export interface AdminWorkerConnection {
@@ -135,6 +139,8 @@ export type AdminWorkerFilter = "connected" | "disconnected" | "disabled"
 export interface UpdateAdminWorkerRequest {
   name?: string
   enabled?: boolean
+  disabledEngines?: string[]
+  guildScope?: "all" | "selected"
 }
 
 /* ---------- サービス全体の設定 ---------- */

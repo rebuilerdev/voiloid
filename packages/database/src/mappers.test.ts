@@ -77,6 +77,19 @@ describe("routingWorker", () => {
         engines: [{ engineId: "VOICEVOX" }],
         guildPermissions: [],
       }),
-    ).toEqual({ id: "w", type: "private", ownerUserId: "u", scope: null, engines: ["VOICEVOX"] })
+    ).toEqual({ id: "w", type: "private", ownerUserId: "u", scope: null, engines: ["VOICEVOX"], restricted: false })
+  })
+
+  it("担当するサーバーを指定した公式Worker は restricted", () => {
+    expect(
+      routingWorker({
+        id: "w",
+        type: WorkerType.OFFICIAL,
+        ownerUserId: null,
+        restrictedToGuilds: true,
+        engines: [],
+        guildPermissions: [{ scope: "SERVER" }],
+      }),
+    ).toMatchObject({ type: "official", scope: "server", restricted: true })
   })
 })

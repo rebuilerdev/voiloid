@@ -113,12 +113,13 @@ export function guildVoiceColumns(voice: VoiceSettings) {
 }
 
 export function routingSettings(
-  settings: Pick<GuildSettings, "workerMode" | "specificWorkerId" | "fallbackToOfficial">,
+  settings: Pick<GuildSettings, "workerMode" | "specificWorkerId" | "fallbackToOfficial" | "disabledEngines">,
 ): RoutingSettings {
   return {
     workerMode: workerModeFromDb[settings.workerMode],
     specificWorkerId: settings.specificWorkerId,
     fallbackToOfficial: settings.fallbackToOfficial,
+    disabledEngines: settings.disabledEngines,
   }
 }
 
@@ -127,6 +128,7 @@ export function routingWorker(worker: {
   id: string
   type: DbWorkerType
   ownerUserId: string | null
+  restrictedToGuilds?: boolean
   engines: { engineId: string }[]
   guildPermissions: { scope: DbWorkerGuildScope }[]
 }): RoutingWorker {
@@ -137,5 +139,6 @@ export function routingWorker(worker: {
     ownerUserId: worker.ownerUserId,
     scope: permission ? scopeFromDb[permission.scope] : null,
     engines: worker.engines.map((e) => e.engineId),
+    restricted: worker.restrictedToGuilds === true,
   }
 }

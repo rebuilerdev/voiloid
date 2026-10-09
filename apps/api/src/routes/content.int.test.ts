@@ -4,7 +4,7 @@
 import { createTestUser, createTestWorker } from "@voiloid/database/testing"
 import { DICTIONARY_MAX_ENTRIES } from "@voiloid/shared"
 import { redisKeys } from "@voiloid/shared/protocol"
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DiscordHttpError } from "../lib/discord"
 import { call, createHarness, installGuild, login, NO_PERMISSIONS, type Harness } from "../../test/harness"
@@ -172,6 +172,27 @@ describe("Bot プロフィール", () => {
       avatarObjectKey: key,
       discordAvatarHash: "newavatarhash",
     })
+  })
+
+  it("確定したら、サブボットへの反映を Bot に指示する（失敗した場合は指示しない）", async () => {
+    const { guild, user } = await managedGuild()
+    const subscriber = h.redis.duplicate()
+    const commands: unknown[] = []
+    await subscriber.subscribe(redisKeys.botCommands())
+    subscriber.on("message", (_channel: string, raw: string) => commands.push(JSON.parse(raw)))
+    try {
+      const url = `/api/guilds/${guild.discordGuildId}/bot-profile`
+      h.discord.failNextMemberUpdate = new DiscordHttpError(429, 30)
+      await call(h, "PATCH", url, { user, body: { nickname: "失敗" } })
+      await call(h, "PATCH", url, { user, body: { nickname: "ずんだ" } })
+      await vi.waitFor(() => expect(commands).toHaveLength(1))
+      // 失敗したリクエストの分が後から届かないこと
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(commands).toHaveLength(1)
+      expect(commands[0]).toEqual({ kind: "sync-profile", id: expect.any(String), guildId: guild.discordGuildId })
+    } finally {
+      subscriber.disconnect()
+    }
   })
 
   it("Discord への反映に失敗したら DB を更新せず、保存した画像を削除する", async () => {

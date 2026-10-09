@@ -73,6 +73,11 @@ export function adminRoutes(
     return reply.status(201).send(ok(await admin.createOfficialWorker(session, input)))
   })
 
+  app.get("/api/admin/workers/:workerId", async (request) => {
+    await as(request, "viewer")
+    return ok(await admin.worker(workerIdParam(request)))
+  })
+
   app.patch("/api/admin/workers/:workerId", async (request) => {
     const session = await as(request, "editor")
     const input = parse(updateAdminWorkerRequestSchema, request.body)

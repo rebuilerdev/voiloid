@@ -18,6 +18,7 @@ import { createServiceState } from "./core/service-state"
 import { SessionManager } from "./core/sessions"
 import { createSynthesizer } from "./core/synthesizer"
 import { botIdentity, channelName, createBotPool, createClients, guildInfo, registerEvents } from "./discord/bot"
+import { createProfileSync } from "./discord/profile"
 import { leaveGuild, registerCommands } from "./discord/register"
 import { createVoiceConnector } from "./discord/voice"
 
@@ -55,6 +56,7 @@ const botSync = createBotSync(repos, logger)
 const [mainReady, ...subsReady] = [...readyClients.values()]
 if (!mainReady) throw new Error("the main bot is not ready")
 await botSync.syncAll(botIdentity(mainReady), subsReady.map(botIdentity))
+const profileSync = createProfileSync({ repos, mainUserId: mainReady.user.id, subs: subsReady })
 
 // 3. 読み上げを始める
 const configs = createGuildConfigStore(repos)
@@ -88,6 +90,7 @@ registerEvents({
   sessions,
   guildSync,
   botSync,
+  profileSync,
   logger,
 })
 
@@ -102,6 +105,7 @@ const handleControl = createControlHandler({
   sessions,
   leaveGuild: (guildId) => leaveGuild(all, guildId),
   registerCommands: () => registerCommands(clients.main.rest, config.DISCORD_CLIENT_ID, config.DEV_GUILD_ID),
+  syncProfile: (guildId, botUserId) => profileSync.apply(guildId, botUserId),
   logger,
 })
 

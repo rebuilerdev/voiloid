@@ -146,15 +146,19 @@ function currentWorkerName(guildId: string) {
   return "official"
 }
 
+/** Worker 群のエンジン（運営者が止めたエンジンは除く） */
 function enginesOf(workers: MockWorker[]) {
-  return new Set(workers.flatMap((w) => w.engines.map((e) => e.engine)))
+  return new Set(
+    workers.flatMap((w) => w.engines.map((e) => e.engine).filter((e) => !w.disabledEngines?.includes(e)))
+  )
 }
 
 /** サーバーで使えるエンジン（Worker モードに従う）。設定ベースで判定し、Online かどうかは問わない */
 function serverEngines(guildId: string): string[] {
   const store = getStore()
   const settings = store.settings.get(guildId)
-  const official = store.workers.filter((w) => w.type === "official")
+  // 担当するサーバーを指定した公式Worker は、指定されたサーバーでだけ使う
+  const official = store.workers.filter((w) => w.type === "official" && (!w.restricted || guildId in w.connections))
   const shared = store.workers.filter((w) => w.type === "private" && w.connections[guildId] === "server")
   const mode = settings?.workerMode ?? "auto"
   let set: Set<string>
@@ -162,13 +166,15 @@ function serverEngines(guildId: string): string[] {
   else if (mode === "specific") set = enginesOf(store.workers.filter((w) => w.id === settings?.workerId))
   else if (mode === "private_preferred" && !settings?.fallbackToOfficial) set = enginesOf(shared)
   else set = enginesOf([...official, ...shared])
-  return [...set].sort()
+  const disabled = settings?.disabledEngines ?? []
+  return [...set].filter((e) => !disabled.includes(e)).sort()
 }
 
 /** 自分のメッセージで使えるエンジン = サーバーのエンジン + 自分専用で接続した Worker */
 function myEngines(guildId: string): string[] {
   const personal = getStore().workers.filter((w) => w.type === "private" && w.connections[guildId] === "personal")
-  return [...new Set([...serverEngines(guildId), ...enginesOf(personal)])].sort()
+  const disabled = getStore().settings.get(guildId)?.disabledEngines ?? []
+  return [...new Set([...serverEngines(guildId), ...enginesOf(personal)])].filter((e) => !disabled.includes(e)).sort()
 }
 
 /** 参加している Bot 導入済みのサーバー（管理しているもの + 参加しているだけのもの） */
@@ -325,6 +331,8 @@ function toAdminWorker(w: MockWorker): AdminWorker {
     enabled,
     owner: w.type === "private" ? { id: store.user.id, name: store.user.displayName } : null,
     connections: Object.keys(w.connections).length,
+    disabledEngines: w.disabledEngines ?? [],
+    ...(w.type === "official" ? { guildScope: w.restricted ? ("selected" as const) : ("all" as const) } : {}),
   }
 }
 
@@ -454,8 +462,24 @@ const adminRoutes: [method: string, pattern: string, handler: Handler][] = [
     ({ params, body }) => {
       const worker = findAnyWorker(params.workerId)
       if (!worker) return notFound()
-      const { name, enabled } = (body ?? {}) as UpdateAdminWorkerRequest
-      if (name === undefined && enabled === undefined) return fail(400, "VALIDATION_ERROR", "Nothing to update.")
+      const { name, enabled, disabledEngines, guildScope } = (body ?? {}) as UpdateAdminWorkerRequest
+      if (name === undefined && enabled === undefined && disabledEngines === undefined && guildScope === undefined) {
+        return fail(400, "VALIDATION_ERROR", "Nothing to update.")
+      }
+      if (guildScope !== undefined && worker.type !== "official") {
+        return fail(400, "VALIDATION_ERROR", "Only official workers can be assigned to servers.")
+      }
+      if (disabledEngines?.some((e) => !worker.engines.some((we) => we.engine === e))) {
+        return fail(400, "VALIDATION_ERROR", "The engine is not provided by this worker.")
+      }
+      if (disabledEngines !== undefined) {
+        worker.disabledEngines = disabledEngines
+        recordAudit("admin.worker.update_engines", "worker", worker.id)
+      }
+      if (guildScope !== undefined) {
+        worker.restricted = guildScope === "selected"
+        recordAudit("admin.worker.update_scope", "worker", worker.id)
+      }
       if (name !== undefined) {
         if (!inRange(name, WORKER_NAME_LENGTH)) return fail(400, "VALIDATION_ERROR", "Worker name must be 1-64 characters.")
         worker.name = name.trim()
@@ -468,6 +492,14 @@ const adminRoutes: [method: string, pattern: string, handler: Handler][] = [
         recordAudit(enabled ? "admin.worker.enable" : "admin.worker.disable", "worker", worker.id)
       }
       return ok(toAdminWorker(worker))
+    },
+  ],
+  [
+    "GET",
+    "/api/admin/workers/:workerId",
+    ({ params }) => {
+      const worker = findAnyWorker(params.workerId)
+      return worker ? ok(toAdminWorker(worker)) : notFound()
     },
   ],
   [
@@ -520,8 +552,10 @@ const adminRoutes: [method: string, pattern: string, handler: Handler][] = [
     ({ params, body }) => {
       const worker = findAnyWorker(params.workerId)
       if (!worker) return notFound()
-      if (worker.type === "official") return fail(400, "VALIDATION_ERROR", "Official workers are available to all servers.")
       const { connections } = body as UpdateWorkerGuildsRequest
+      if (worker.type === "official" && connections.some((c) => c.scope !== "server")) {
+        return fail(400, "VALIDATION_ERROR", "Official workers can only be assigned to servers.")
+      }
       if (connections.some((c) => !findGuild(c.guildId))) return notFound()
       worker.connections = Object.fromEntries(connections.map((c) => [c.guildId, c.scope]))
       recordAudit("admin.worker.update_connections", "worker", worker.id)
@@ -981,6 +1015,9 @@ const routes: [method: string, pattern: string, handler: Handler][] = [
       const next = { ...current, ...patch }
       if (next.readingMode === "fixed" && (!next.textChannelId || !next.voiceChannelId)) {
         return fail(400, "VALIDATION_ERROR", "textChannelId and voiceChannelId are required for fixed mode.")
+      }
+      if (next.disabledEngines.includes(next.voice.engine)) {
+        return fail(400, "VALIDATION_ERROR", `${next.voice.engine} is used by the default voice and cannot be turned off.`)
       }
       getStore().settings.set(params.guildId, next)
       return ok(next)

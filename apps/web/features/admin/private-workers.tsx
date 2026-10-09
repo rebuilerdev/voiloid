@@ -81,7 +81,13 @@ export function PrivateWorkers({ initial, canEdit }: { initial: Page<AdminWorker
                   {list.items.map((w) => (
                     <TableRow key={w.id}>
                       <TableCell>
-                        <span className="font-medium">{w.name}</span>
+                        <Link
+                          href={`/admin/workers/${w.id}`}
+                          aria-label={fmt(t.ops.openWorker, { name: w.name })}
+                          className="font-medium underline-offset-4 hover:underline"
+                        >
+                          {w.name}
+                        </Link>
                         <span className="block font-mono text-[11px] text-muted-foreground">{w.id}</span>
                       </TableCell>
                       <TableCell>

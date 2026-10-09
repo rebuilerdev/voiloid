@@ -149,6 +149,7 @@ describe("registerEvents", () => {
     }
     const sessions = { get: vi.fn(), moved: vi.fn(() => Promise.resolve()), inGuild: vi.fn(() => []), stop: vi.fn() }
     const botSync = { syncAll: vi.fn(), joined: vi.fn(() => Promise.resolve()), left: vi.fn(() => Promise.resolve()) }
+    const profileSync = { apply: vi.fn((_guildId: string, _botUserId?: string) => Promise.resolve(1)) }
     Object.assign(main, { user: { id: "bot1" } })
     const sub = Object.assign(new EventEmitter(), { user: { id: "bot2" } })
     registerEvents({
@@ -159,9 +160,10 @@ describe("registerEvents", () => {
       sessions: sessions as never,
       guildSync: guildSync,
       botSync,
+      profileSync,
       logger: silentLogger,
     })
-    return { main, sub, reader, commands, guildSync, botSync, sessions }
+    return { main, sub, reader, commands, guildSync, botSync, profileSync, sessions }
   }
 
   function interaction(commandName: string, sub?: string) {
@@ -262,6 +264,17 @@ describe("registerEvents", () => {
     expect(botSync.joined).toHaveBeenCalledWith("bot2", "g1")
     expect(botSync.left).toHaveBeenCalledWith("bot2", "g1")
     expect(botSync.left).not.toHaveBeenCalledWith("bot1", "g1")
+  })
+
+  it("サブボットがサーバーに参加したら、そのサブボットにだけプロフィールを反映する（失敗しても止まらない）", async () => {
+    const { main, sub, profileSync } = setup()
+    const guild = { id: "g1", name: "n", icon: null, ownerId: "o", memberCount: 1 }
+    main.emit(Events.GuildCreate, guild)
+    expect(profileSync.apply).not.toHaveBeenCalled()
+    profileSync.apply.mockRejectedValueOnce(new Error("Missing Permissions"))
+    sub.emit(Events.GuildCreate, guild)
+    await tick()
+    expect(profileSync.apply).toHaveBeenCalledWith("g1", "bot2")
   })
 
   it.each([

@@ -1,5 +1,6 @@
 /**
- * 運営コンソールからの指示（Control API → Redis Pub/Sub → Bot）。結果は Redis に書き、API が待つ。
+ * Control API からの指示（運営コンソールの操作・プロフィールの反映。Redis Pub/Sub → Bot）。
+ * 結果は Redis に書き、API が待つ（プロフィールの反映は待たない）。
  */
 import type { BotCommandResult } from "@voiloid/shared/contracts"
 import { botCommandSchema, redisKeys, type BotCommand } from "@voiloid/shared/protocol"
@@ -18,6 +19,8 @@ export function createControlHandler(deps: {
   leaveGuild: (guildId: string) => Promise<number>
   /** スラッシュコマンドを登録し直す（登録したコマンドの数） */
   registerCommands: () => Promise<number>
+  /** サーバーのプロフィールをサブボットに反映する（反映した Bot の数） */
+  syncProfile: (guildId: string, botUserId?: string) => Promise<number>
   logger: Logger
 }) {
   async function stopSessions(guildId: string, reason: string) {
@@ -36,6 +39,8 @@ export function createControlHandler(deps: {
       }
       case "register-commands":
         return { ok: true, message: `${await deps.registerCommands()} command(s) registered` }
+      case "sync-profile":
+        return { ok: true, message: `${await deps.syncProfile(command.guildId, command.botUserId)} bot(s) updated` }
     }
   }
 

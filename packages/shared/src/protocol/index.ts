@@ -218,6 +218,8 @@ export const invalidationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("worker"), workerId: z.string() }),
   /** サービス全体の設定（一時停止・上限値など） */
   z.object({ kind: z.literal("system") }),
+  /** 振り分けの再計算だけ（公式Worker の担当サーバーの変更など。Worker は切断しない） */
+  z.object({ kind: z.literal("routing") }),
 ])
 
 /** Control API → Bot の指示（運営コンソールから） */
@@ -228,6 +230,8 @@ export const botCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("leave-guild"), id: z.uuid(), guildId: z.string() }),
   /** スラッシュコマンドを登録し直す */
   z.object({ kind: z.literal("register-commands"), id: z.uuid() }),
+  /** サーバーのプロフィール（名前・アイコン）をサブボットにも反映する。botUserId を指定するとその Bot だけ */
+  z.object({ kind: z.literal("sync-profile"), id: z.uuid(), guildId: z.string(), botUserId: z.string().optional() }),
 ])
 
 export type BotCommand = z.infer<typeof botCommandSchema>

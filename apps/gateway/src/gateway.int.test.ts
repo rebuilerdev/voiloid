@@ -78,7 +78,10 @@ describe("接続・hello", () => {
     const welcome = await fake(token).connect()
     expect(welcome).toMatchObject({ type: "welcome", workerId: worker.publicId })
 
-    await until(async () => (await h.db.worker.findUniqueOrThrow({ where: { id: worker.id } })).status === "ONLINE")
+    // 状態（ONLINE）の後にエンジンを同期するため、エンジンの同期まで待つ
+    await until(async () =>
+      (await h.db.workerEngine.findMany({ where: { workerId: worker.id } })).every((e) => e.health !== "UNKNOWN"),
+    )
     const row = await h.db.worker.findUniqueOrThrow({ where: { id: worker.id }, include: { engines: true } })
     expect(row).toMatchObject({ version: "1.2.3", maxConcurrency: 2 })
     expect(Object.fromEntries(row.engines.map((e) => [e.engineId, e.health]))).toEqual({
@@ -301,6 +304,50 @@ describe("合成の振り分け", () => {
     expect((await synthesize(guild.discordGuildId, null)).status).toBe(200)
     await h.redis.publish(redisKeys.invalidation(), JSON.stringify({ kind: "guild", guildId: guild.discordGuildId }))
     await until(async () => (await synthesize(guild.discordGuildId, null)).status === 503)
+  })
+})
+
+describe("エンジンのオンオフ・公式Worker の担当サーバー", () => {
+  it("運営者が止めたエンジンは、振り分け・声の一覧・プレビューに使わない", async () => {
+    const guild = await createTestGuild(h.db)
+    const user = await createTestUser(h.db)
+    const { worker, token } = await registerTestWorker(h.db)
+    await h.db.workerEngine.updateMany({ where: { workerId: worker.id }, data: { enabled: false } })
+    await fake(token).connect()
+    expect((await synthesize(guild.discordGuildId, null)).status).toBe(503)
+    expect(await (await internal(h, "GET", `/voices?userId=${user.id}`)).json()).toEqual({ data: [] })
+    const voice = { engine: "VOICEVOX", speakerId: ZUNDAMON, styleId: "3", speed: 1, pitch: 0, intonation: 1 }
+    expect((await internal(h, "POST", "/preview", { userId: user.id, voice, text: "テスト" })).status).toBe(503)
+  })
+
+  it("担当するサーバーを指定した公式Worker は、指定したサーバーでだけ使う。routing の通知で再計算する", async () => {
+    const [assigned, other] = await Promise.all([createTestGuild(h.db), createTestGuild(h.db)])
+    const { worker, token } = await registerTestWorker(h.db)
+    await h.db.worker.update({ where: { id: worker.id }, data: { restrictedToGuilds: true } })
+    await h.db.workerGuildPermission.create({ data: { workerId: worker.id, guildId: assigned.id } })
+    await fake(token).connect()
+    expect((await synthesize(assigned.discordGuildId, null)).status).toBe(200)
+    expect((await synthesize(other.discordGuildId, null)).status).toBe(503)
+
+    await h.db.worker.update({ where: { id: worker.id }, data: { restrictedToGuilds: false } })
+    await h.redis.publish(redisKeys.invalidation(), JSON.stringify({ kind: "routing" }))
+    await until(async () => (await synthesize(other.discordGuildId, null)).status === 200)
+    // 切断しない
+    expect(h.gateway.registry.get(worker.id)).toBeDefined()
+  })
+
+  it("サーバーでオフにしたエンジンのマイボイスは使わず、デフォルト音声で読む", async () => {
+    const guild = await createTestGuild(h.db)
+    const alice = await createTestUser(h.db)
+    await h.db.userVoiceSettings.create({
+      data: { userId: alice.id, engineId: "COEIROINK", speakerId: "tsukuyomi", styleId: "0" },
+    })
+    await h.db.guildSettings.create({ data: { guildId: guild.id, disabledEngines: ["COEIROINK"] } })
+    const { token } = await registerTestWorker(h.db, { engines: ["VOICEVOX", "COEIROINK"] })
+    await fake(token, [voicevox, engine("COEIROINK", [["tsukuyomi", ["0"]]])]).connect()
+    const res = await synthesize(guild.discordGuildId, alice.discordUserId)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("x-voice-source")).toBe("guild")
   })
 })
 

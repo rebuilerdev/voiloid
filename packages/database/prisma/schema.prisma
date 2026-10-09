@@ -278,6 +278,9 @@ model GuildSettings {
 
   fallbackToOfficial Boolean @default(true)
 
+  /// このサーバーで使わないエンジン（声の選択肢・読み上げから外す）
+  disabledEngines String[] @default([]) @db.VarChar(32)
+
   /// サーバーのデフォルト音声（既定: VOICEVOX ずんだもん ノーマル）
   voiceEngineId   String @default("VOICEVOX") @db.VarChar(32)
   voiceSpeakerId  String @default("388f246b-8c41-4ac1-8e2d-5d79f3ff56d9") @db.VarChar(128)
@@ -362,6 +365,9 @@ model Worker {
 
   enabled Boolean @default(true)
 
+  /// 公式Worker のみ: true = 接続先（WorkerGuildPermission）に指定したサーバーだけを担当する
+  restrictedToGuilds Boolean @default(false)
+
   version String? @db.VarChar(64)
 
   lastSeenAt DateTime?
@@ -406,6 +412,9 @@ model WorkerEngine {
   engineVersion String? @db.VarChar(64)
 
   health EngineHealth @default(UNKNOWN)
+
+  /// false = 運営者が止めた（Worker が動かしていても振り分けに使わない）
+  enabled Boolean @default(true)
 
   lastSeenAt DateTime?
 

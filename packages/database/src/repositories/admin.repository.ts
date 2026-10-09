@@ -212,8 +212,20 @@ export function adminRepository(db: DbClient) {
     officialWorkers() {
       return db.worker.findMany({
         where: { type: WorkerType.OFFICIAL, deletedAt: null },
-        select: workerSelect,
+        select: { ...workerSelect, _count: { select: { guildPermissions: true } } },
         orderBy: [{ name: "asc" }, { id: "asc" }],
+      })
+    },
+
+    /** Worker の詳細（公式・自鯖。削除済みを除く） */
+    workerDetail(publicId: string) {
+      return db.worker.findFirst({
+        where: { publicId, deletedAt: null },
+        select: {
+          ...workerSelect,
+          owner: { select: { discordUserId: true, discordUsername: true, discordGlobalName: true } },
+          _count: { select: { guildPermissions: true } },
+        },
       })
     },
 

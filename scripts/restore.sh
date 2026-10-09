@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # PostgreSQL をバックアップから復元する（本番マシン上で実行する）。
 #
-#   ./scripts/restore.sh backups/voiloid-20261009T000000Z.dump
+#   DEPLOY_ENV_FILE=/srv/voiloid/.env DEPLOY_STATE_DIR=/srv/voiloid/state ./scripts/restore.sh <バックアップ>.dump
 #
 # 復元中は読み書きを止めるため、アプリのサービスを停止してから実行し、終わったら起動し直す。
 # 定期的に検証用の環境で復元を試し、手順とバックアップが使えることを確認すること（Restore Test）。
@@ -11,7 +11,13 @@ cd "$(dirname "$0")/.."
 
 file="${1:?usage: restore.sh <backup.dump>}"
 ENV_FILE="${DEPLOY_ENV_FILE:-.env}"
+STATE_DIR="${DEPLOY_STATE_DIR:-$HOME/.voiloid-deploy}"
 [[ -f "$file" ]] || { echo "backup not found: $file" >&2; exit 1; }
+
+# 今動いているバージョンのイメージで起動し直す（イメージのタグはコミット ID。latest は無い）
+IMAGE_TAG="${IMAGE_TAG:-$(cat "$STATE_DIR/deployed-tag" 2>/dev/null || true)}"
+[[ -n "$IMAGE_TAG" ]] || { echo "the deployed version is unknown: set IMAGE_TAG or DEPLOY_STATE_DIR" >&2; exit 1; }
+export IMAGE_TAG
 
 compose() {
   docker compose --env-file "$ENV_FILE" "$@"

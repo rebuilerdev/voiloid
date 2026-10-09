@@ -173,6 +173,8 @@ export interface GuildSettings {
   workerId?: string
   fallbackToOfficial: boolean
   voice: VoiceSettings
+  /** このサーバーで使わないエンジン（声の選択肢・読み上げから外す） */
+  disabledEngines: string[]
 }
 
 /**
@@ -192,6 +194,10 @@ export const updateGuildSettingsRequestSchema = z
     workerId: z.string().min(1).max(64).nullable(),
     fallbackToOfficial: z.boolean(),
     voice: voiceSettingsSchema,
+    disabledEngines: z
+      .array(engineIdSchema)
+      .max(ENGINE_IDS.length)
+      .refine((v) => new Set(v).size === v.length, { message: "disabledEngines must be unique." }),
   })
   .partial()
   .strict()
@@ -479,8 +485,12 @@ export interface AdminWorker extends Worker {
   /** false = メンテナンス中（振り分けに使わない・接続を受け付けない） */
   enabled: boolean
   owner: { id: string; name: string } | null
-  /** 接続先のサーバー数 */
+  /** 接続先のサーバー数（公式Worker は担当に指定したサーバー数） */
   connections: number
+  /** 運営者が止めたエンジン */
+  disabledEngines: string[]
+  /** 公式Worker のみ: all = 全サーバー / selected = 指定したサーバーだけ */
+  guildScope?: "all" | "selected"
 }
 
 export interface AdminWorkerConnection {
@@ -494,10 +504,18 @@ export const adminWorkersQuerySchema = pageQuerySchema.extend({
 })
 
 export const updateAdminWorkerRequestSchema = z
-  .object({ name: trimmed(WORKER_NAME_LENGTH), enabled: z.boolean() })
+  .object({
+    name: trimmed(WORKER_NAME_LENGTH),
+    enabled: z.boolean(),
+    disabledEngines: z
+      .array(engineIdSchema)
+      .max(ENGINE_IDS.length)
+      .refine((v) => new Set(v).size === v.length, { message: "disabledEngines must be unique." }),
+    guildScope: z.enum(["all", "selected"]),
+  })
   .partial()
   .strict()
-  .refine((v) => v.name !== undefined || v.enabled !== undefined, { message: "Nothing to update." })
+  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update." })
 
 export type UpdateAdminWorkerRequest = z.infer<typeof updateAdminWorkerRequestSchema>
 

@@ -323,12 +323,13 @@ describe("mappers", () => {
   it("DB の設定を振り分け用に変換する", async () => {
     const guild = await createTestGuild(db)
     const settings = await db.guildSettings.create({
-      data: { guildId: guild.id, workerMode: WorkerMode.PRIVATE_PREFERRED },
+      data: { guildId: guild.id, workerMode: WorkerMode.PRIVATE_PREFERRED, disabledEngines: ["COEIROINK"] },
     })
     expect(routingSettings(settings)).toEqual({
       workerMode: "private_preferred",
       specificWorkerId: null,
       fallbackToOfficial: true,
+      disabledEngines: ["COEIROINK"],
     })
   })
 })
@@ -361,5 +362,24 @@ describe("commitBotProfile", () => {
       orderBy: { createdAt: "asc" },
     })
     expect(reset.at(-1)?.metadata).toEqual({ nickname: "unchanged", avatar: "reset" })
+  })
+})
+
+describe("workerRepository: エンジンの停止・担当サーバー", () => {
+  it("止めたエンジンを振り分けの候補から外し、担当サーバーの限定を記録する", async () => {
+    const repos = createRepositories(db)
+    const guild = await createTestGuild(db)
+    const worker = await createTestWorker(db, { type: "OFFICIAL", engines: ["VOICEVOX", "AivisSpeech"] })
+    await repos.workers.setDisabledEngines(worker.id, ["AivisSpeech"])
+    let [candidate] = await repos.workers.listRoutingCandidates([guild.id])
+    expect(candidate?.engines.map((e) => e.engineId)).toEqual(["VOICEVOX"])
+    expect((await repos.workers.findForAuth(worker.publicId))?.engines).toEqual([{ engineId: "AivisSpeech" }])
+
+    await repos.workers.setDisabledEngines(worker.id, [])
+    ;[candidate] = await repos.workers.listRoutingCandidates([guild.id])
+    expect(candidate?.engines).toHaveLength(2)
+
+    const updated = await repos.workers.setRestrictedToGuilds(worker.id, true)
+    expect(updated.restrictedToGuilds).toBe(true)
   })
 })

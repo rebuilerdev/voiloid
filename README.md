@@ -1,67 +1,68 @@
-# voiloid
+# Voiloid
 
-Discord の読み上げ Bot サービス（本番版 v1）。Web の管理画面・Control API・Worker Gateway・Discord Bot・音声合成 Worker からなる monorepo です。
+Voiloid は、Discord のテキストチャンネルに書かれたメッセージを、ボイスチャンネルで読み上げる Bot です。
+読み上げの設定・辞書・声は、ブラウザの管理画面（Web コンソール）からまとめて変更できます。
 
-## 構成
+## できること
+
+- **読み上げ**: `/join` で Bot をボイスチャンネルに呼び、そのテキストチャンネルの発言を読み上げます。チャンネルを固定して、自動で参加させることもできます
+- **声を選べる**: VOICEVOX・AivisSpeech・COEIROINK の声から、サーバーの既定の声と、自分専用の声（マイボイス）を選べます
+- **辞書**: 読み間違える単語の読み方を、サーバーごとに登録できます
+- **自分の PC で音声を作る（自鯖Worker）**: 自分の PC やサーバーで音声合成を動かし、好きな声や速さで使えます
+- **複数のボイスチャンネル**: サブボットを追加すると、同じサーバーの別のボイスチャンネルでも同時に読み上げられます
+- **運営コンソール**: 運営者は、サーバー・ユーザー・Worker・サービス全体の設定を Web から管理できます
+
+## ドキュメント
+
+読む人に合わせて分けています。上から順に読めば分かるように書いています。
+
+| 読む人 | ドキュメント | 内容 |
+|---|---|---|
+| サーバー管理者・メンバー | [利用者ガイド](docs/user-guide.md) | Bot の導入、読み上げの始め方、コマンド、各設定、よくある質問 |
+| 自分の PC で音声を作りたい人 | [自鯖Worker ガイド](docs/self-hosted-worker.md) | 自鯖Worker の登録・起動・サーバーへの接続 |
+| 運営者（はじめて） | [本番環境の構築](docs/setup.md) | Discord・ストレージ・GitHub・本番マシンの準備、`.env` の全項目、初回デプロイ |
+| 運営者（日常） | [運用ガイド](docs/operations.md) | デプロイ、バックアップ、運営コンソール、公式Worker、サブボット、ログ |
+| 運営者（困ったとき） | [トラブル対応](docs/troubleshooting.md) | よくあるエラーと対処 |
+| 開発者 | [開発ガイド](docs/development.md) | 構成、ローカル開発、テスト、Migration、CI / CD |
+
+## 全体の仕組み
+
+```mermaid
+flowchart LR
+  user[ブラウザ] -->|HTTPS| caddy[Caddy]
+  caddy --> web[Web コンソール<br/>Next.js]
+  caddy -->|/api| api[Control API]
+  caddy -->|/worker| gateway[Worker Gateway]
+  discord[(Discord)] <--> bot[Discord Bot]
+  bot -->|読み上げる文章| gateway
+  gateway <-->|WebSocket| worker1[公式Worker]
+  gateway <-->|WebSocket| worker2[自鯖Worker<br/>利用者の PC]
+  worker1 --> engine1[VOICEVOX など]
+  worker2 --> engine2[VOICEVOX など]
+  api --> db[(PostgreSQL / Redis)]
+  gateway --> db
+  bot --> db
+```
+
+1. Bot が Discord のメッセージを受け取り、読み上げる文章に整えて Worker Gateway に送ります
+2. Worker Gateway が、そのサーバーで使える Worker を選んで音声を作らせます
+3. Bot が受け取った音声をボイスチャンネルで流します
+
+Web コンソールは Control API を通して設定を読み書きします。Worker は音声合成ソフトのそばで動き、Worker Gateway に WebSocket で接続します。
+
+## リポジトリの構成
 
 ```
 apps/
-  web/       Web GUI（Next.js）
-  api/       Control API（Fastify）: Discord ログイン・権限確認・設定・Bot プロフィール・利用量
-  gateway/   Worker Gateway: Worker の WebSocket 接続・合成ジョブの振り分け・利用記録
-  bot/       Discord Bot（discord.js / @discordjs/voice）
-  worker/    音声合成 Worker（VOICEVOX / AivisSpeech / COEIROINK の横で動く）
+  web/       Web コンソール（Next.js）
+  api/       Control API（Fastify）: ログイン・権限・設定・運営コンソール
+  gateway/   Worker Gateway: Worker の接続と、音声合成の振り分け
+  bot/       Discord Bot（discord.js）
+  worker/    音声合成 Worker（VOICEVOX などのそばで動く）
 packages/
-  shared/    API 契約（Zod）・エンジン定義・声の決定と Worker 選択・読み上げテキスト整形・サービス間プロトコル
-  database/  Prisma（PostgreSQL）: schema / migrations / repositories / transactions
+  shared/    共通の型・振り分けのルール・読み上げる文章の整え方
+  database/  データベース（Prisma / PostgreSQL）
+docs/        ドキュメント
 ```
 
-```
-ブラウザ ──https──▶ Caddy ──▶ web（Next.js）
-                         ├─▶ api（/api/*）──▶ PostgreSQL / Redis / S3 / Discord
-                         └─▶ gateway（/worker, WSS）◀── Worker（各ユーザーのマシン・公式サーバー）
-bot ──内部 API──▶ gateway                         └─▶ VOICEVOX など
-```
-
-- DB に接続するのは api / gateway / bot だけです（Web GUI と Worker は接続しません）
-- 読み上げる声は「投稿者のマイボイス → サーバーのデフォルト音声」の順に決まります。投稿者が使える Worker にそのエンジンが無ければ、デフォルト音声になります（`packages/shared/src/voice/routing.ts`）
-- Worker はサーバーに「共有」（全員が使う。管理権限が必要）するか、「自分専用」（参加しているだけのサーバーでも可）で接続します
-
-## 開発
-
-必要なもの: Node.js 24（`.nvmrc`）、Docker
-
-```bash
-npm ci
-npm run dev:deps           # PostgreSQL / Redis（compose.dev.yaml）
-cp packages/database/.env.example packages/database/.env
-npm run db:generate
-npm run db:migrate         # 開発 DB に Migration を適用
-npm run db:seed            # 開発用データ（公式・自鯖 Worker のトークンが表示される）
-```
-
-各アプリは `apps/<app>/.env` を用意して `npm run dev -w @voiloid/<app>` で起動します（必要な変数は各アプリの `src/config.ts`）。
-Web GUI はモックモード（`NEXT_PUBLIC_USE_MOCK` 未設定）なら Backend なしで動きます。
-
-## テスト
-
-| コマンド | 内容 |
-|---|---|
-| `npm test` | 単体テスト |
-| `npm run test:integration` | 統合テスト（実 PostgreSQL / Redis。`compose.dev.yaml` のテスト専用 DB `voiloid_test` と Redis の DB 15 を使う） |
-| `npm run test:coverage` | 両方 + カバレッジの閾値（全体 90%、`packages/shared` は 100%） |
-| `npm run test:e2e -w @voiloid/web` | Web GUI の E2E（Playwright。先に `npm run build -w @voiloid/web`） |
-| `npm run check` | 書式・Lint・型・テスト（CI と同じ） |
-
-`VOICEVOX_E2E_URL=http://127.0.0.1:50021 npx vitest run --project integration apps/worker` で、実際の VOICEVOX を使った End-to-End も確認できます。
-
-統合テストは DB 名が `_test` で終わる場合だけ実行できます（開発・本番 DB を誤って消さないため）。
-
-## CI / CD
-
-- **CI**（`.github/workflows/ci.yml`）: 書式 / Lint / 型 / 本番依存の脆弱性 → 単体 + 統合テスト（カバレッジ閾値）→ Migration テスト（空の DB に全 Migration、Schema との差分、破壊的変更のレビュー確認）→ E2E → 全イメージの Docker ビルド
-- **CD**（`.github/workflows/deploy.yml`）: main の CI が成功したら、本番マシンの self-hosted runner がそのマシンで `scripts/deploy.sh` を実行します（ビルド → バックアップ → Migration → 起動 → 確認、失敗時は直前のバージョンに戻す）
-- **Worker イメージ**（`.github/workflows/worker-image.yml`）: `v*` タグで GHCR に公開します
-- CodeQL・Dependabot
-
-本番マシンの準備と運用は [docs/operations.md](docs/operations.md) を参照してください。
+開発の始め方は [開発ガイド](docs/development.md) を参照してください。

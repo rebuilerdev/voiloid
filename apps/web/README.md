@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Web コンソール（apps/web）
 
-## Getting Started
+Voiloid の Web コンソールです。利用者の設定画面（サーバー・Worker・声・利用状況・設定）と、運営コンソール（`/admin`）を含みます。
 
-First, run the development server:
+## 動かす
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev -w @voiloid/web     # http://localhost:3000（モックで動く）
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- 既定では **モック**（`lib/mock`）で動き、Backend は要りません
+- 本物の Control API に接続する場合は `NEXT_PUBLIC_USE_MOCK=false` と `NEXT_PUBLIC_API_BASE_URL` を設定します
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## フォルダ
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| パス | 内容 |
+|---|---|
+| `app/[lang]/` | ページ（`login`、`(console)` 以下に各画面。言語は URL を変えずに Cookie・ブラウザの設定で切り替える） |
+| `features/` | 画面ごとの部品（`servers`・`workers`・`admin` など） |
+| `components/` | 共通の部品（`ui` は shadcn/ui） |
+| `services/` | Control API の呼び出し |
+| `types/` | API の型（`contract-check.ts` で `@voiloid/shared` の契約と一致するか確かめる） |
+| `lib/i18n/dictionaries/` | 画面の文言（日本語・英語） |
+| `lib/mock/` | モックの API とデータ（開発・E2E 用。本番では使わない） |
+| `e2e/` | Playwright の E2E |
 
-## Learn More
+## テスト
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+NEXT_PUBLIC_USE_MOCK=true npm run build -w @voiloid/web
+npm run test:e2e -w @voiloid/web
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+全体の説明は [開発ガイド](../../docs/development.md) を参照してください。

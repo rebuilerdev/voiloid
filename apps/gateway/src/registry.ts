@@ -39,6 +39,8 @@ export interface ConnectedWorker {
   failures: number
   latencyMs: number | undefined
   lastSeenAt: Date
+  /** 運営者が止めたエンジン（Worker が動かしていても使わない。接続時に DB から読む） */
+  disabledEngines?: ReadonlySet<string>
 }
 
 export class WorkerJobError extends Error {
@@ -90,12 +92,16 @@ export class WorkerRegistry {
     const engine = worker.engines.get(voice.engine)
     return (
       engine?.healthy === true &&
+      !worker.disabledEngines?.has(voice.engine) &&
       engine.speakers.some((s) => s.id === voice.speakerId && s.styles.some((st) => st.id === voice.styleId))
     )
   }
 
+  /** 使えるエンジン（正常で、運営者が止めていないもの） */
   static healthyEngines(worker: ConnectedWorker): string[] {
-    return [...worker.engines.values()].filter((e) => e.healthy).map((e) => e.engine)
+    return [...worker.engines.values()]
+      .filter((e) => e.healthy && !worker.disabledEngines?.has(e.engine))
+      .map((e) => e.engine)
   }
 
   /** 負荷（実行中のジョブ / 同時実行数）。小さいほど空いている */

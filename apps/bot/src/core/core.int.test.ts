@@ -304,16 +304,18 @@ describe("運営コンソールからの指示", () => {
     const base = setup()
     const leaveGuild = vi.fn((_guildId: string) => Promise.resolve(2))
     const registerCommands = vi.fn(() => Promise.resolve(5))
+    const syncProfile = vi.fn((_guildId: string, _botUserId?: string) => Promise.resolve(1))
     const handle = createControlHandler({
       redis,
       sessions: base.sessions,
       leaveGuild,
       registerCommands,
+      syncProfile,
       logger: silentLogger,
     })
     const result = async (id: string) =>
       JSON.parse((await redis.get(redisKeys.botCommandResult(id))) ?? "null") as unknown
-    return { ...base, handle, leaveGuild, registerCommands, result }
+    return { ...base, handle, leaveGuild, registerCommands, syncProfile, result }
   }
   const id = () => crypto.randomUUID()
 
@@ -343,6 +345,16 @@ describe("運営コンソールからの指示", () => {
     const register = id()
     await handle(JSON.stringify({ kind: "register-commands", id: register }))
     expect(await result(register)).toEqual({ ok: true, message: "5 command(s) registered" })
+  })
+
+  it("プロフィールをサブボットに反映する（対象の Bot の指定も渡す）", async () => {
+    const { handle, syncProfile, result } = control()
+    const all = id()
+    await handle(JSON.stringify({ kind: "sync-profile", id: all, guildId: "g1" }))
+    expect(syncProfile).toHaveBeenCalledWith("g1", undefined)
+    expect(await result(all)).toEqual({ ok: true, message: "1 bot(s) updated" })
+    await handle(JSON.stringify({ kind: "sync-profile", id: id(), guildId: "g1", botUserId: "sub1" }))
+    expect(syncProfile).toHaveBeenLastCalledWith("g1", "sub1")
   })
 
   it("失敗したら ok: false を書き、不正なメッセージは無視する", async () => {

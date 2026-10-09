@@ -87,6 +87,10 @@ export function createGateway(options: GatewayOptions) {
       case "system":
         // サービス全体の設定は Bot が扱う（合成の振り分けには影響しない）
         return
+      case "routing":
+        // 公式Worker の担当サーバーの変更など。Worker は切断しない
+        router.invalidateAll()
+        return
     }
   })
 

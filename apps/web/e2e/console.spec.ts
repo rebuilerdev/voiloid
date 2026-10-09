@@ -65,6 +65,20 @@ test("サーバーの概要で各 Bot の参加状況が分かり、いないサ
   expect(errors).toEqual([])
 })
 
+test("サーバーの Voice タブでエンジンをオフにでき、デフォルト音声のエンジンはオフにできない", async ({ page }) => {
+  const errors = trackErrors(page)
+  await login(page, "/servers/1122334455/voice")
+  await expect(page.getByRole("switch", { name: /VOICEVOX/ })).toBeDisabled()
+  const aivis = page.getByRole("switch", { name: /AivisSpeech/ })
+  await expect(aivis).toBeChecked()
+  await aivis.click()
+  await expect(page.getByText("AivisSpeech をオフにしました")).toBeVisible()
+  await expect(aivis).not.toBeChecked()
+  // 使えるエンジンの表示からも外れる
+  await expect(page.getByText("このサーバーで使えるエンジン:").locator("..")).not.toContainText("AivisSpeech")
+  expect(errors).toEqual([])
+})
+
 test("主要なページがエラーなく表示される", async ({ page }) => {
   const errors = trackErrors(page)
   await login(page)

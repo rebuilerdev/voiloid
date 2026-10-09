@@ -8,7 +8,7 @@ import { availableEngines, serverWorkerTiers, workerTiersFor } from "@voiloid/sh
 import type { AppDeps } from "../deps"
 
 /**
- * サーバーごとに使えるエンジン。
+ * サーバーごとに使えるエンジン（サーバーでオフにしたエンジンは除く）。
  * userId を指定すると、そのユーザーが自分専用で接続した Worker も含める。
  */
 export async function enginesByGuild(
@@ -26,7 +26,7 @@ export async function enginesByGuild(
         .map((w) => routingWorker({ ...w, guildPermissions: w.guildPermissions.filter((p) => p.guildId === id) }))
       const routing = routingSettings(settings)
       const tiers = userId === null ? serverWorkerTiers(routing, workers) : workerTiersFor(routing, workers, userId)
-      return [id, availableEngines(tiers)] as const
+      return [id, availableEngines(tiers, routing.disabledEngines)] as const
     }),
   )
 }

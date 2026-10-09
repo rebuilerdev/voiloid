@@ -96,6 +96,14 @@ describe("serverWorkerTiers", () => {
     expect(serverWorkerTiers(settings({ workerMode: "specific", specificWorkerId: null }), all)).toEqual([])
   })
 
+  it("担当するサーバーを指定した公式Worker は、指定されたサーバーでだけ使う", () => {
+    const restricted: RoutingWorker = { ...official1, id: "r1", restricted: true }
+    const assigned: RoutingWorker = { ...official1, id: "r2", restricted: true, scope: "server" }
+    expect(ids(serverWorkerTiers(settings({ workerMode: "official" }), [official2, restricted, assigned]))).toEqual([
+      ["o2", "r2"],
+    ])
+  })
+
   it("空のグループは含めない", () => {
     expect(serverWorkerTiers(settings({ workerMode: "private_preferred" }), [official1])).toEqual([[official1]])
     expect(serverWorkerTiers(settings(), [])).toEqual([])
@@ -130,6 +138,11 @@ describe("availableEngines / tiersForEngine", () => {
     expect(availableEngines(workerTiersFor(settings({ workerMode: "official" }), all, "alice"))).toEqual([
       "AivisSpeech",
       "COEIROINK",
+      "VOICEVOX",
+    ])
+    // サーバーでオフにしたエンジンは除く
+    expect(availableEngines(workerTiersFor(settings(), all, "alice"), ["COEIROINK"])).toEqual([
+      "AivisSpeech",
       "VOICEVOX",
     ])
   })
@@ -182,6 +195,29 @@ describe("resolveVoice", () => {
       userId: "carol",
       userVoice: null,
       guildVoice: voice("COEIROINK"),
+    })
+    expect(result).toBeNull()
+  })
+
+  it("サーバーでオフにしたエンジンのマイボイスは使わず、デフォルト音声で読む", () => {
+    const result = resolveVoice({
+      ...base,
+      settings: settings({ disabledEngines: ["COEIROINK"] }),
+      userId: "alice",
+      userVoice: voice("COEIROINK"),
+      guildVoice: voice("VOICEVOX"),
+    })
+    expect(result?.source).toBe("guild")
+    expect(result?.voice.engine).toBe("VOICEVOX")
+  })
+
+  it("デフォルト音声のエンジンがオフなら合成しない", () => {
+    const result = resolveVoice({
+      ...base,
+      settings: settings({ disabledEngines: ["VOICEVOX"] }),
+      userId: "alice",
+      userVoice: null,
+      guildVoice: voice("VOICEVOX"),
     })
     expect(result).toBeNull()
   })

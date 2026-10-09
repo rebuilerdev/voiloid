@@ -209,7 +209,8 @@ export const ja = {
   },
   botProfile: {
     title: "Botのプロフィール",
-    description: "このサーバーでのBotの名前とアイコンを変更します。他のサーバーには影響しません。",
+    description:
+      "このサーバーでのBotの名前とアイコンを変更します。サーバーにいるサブボットにも同じ内容が反映されます。他のサーバーには影響しません。",
     avatar: "アイコン",
     selectImage: "画像を選択",
     resetAvatar: "既定に戻す",
@@ -472,6 +473,24 @@ export const ja = {
     noConnections: "接続しているサーバーはありません",
     disconnectGuild: "外す",
     connectionsUpdated: "接続先を変更しました",
+    // Worker の詳細
+    workerEnginesHint:
+      "オフにしたエンジンは、この Worker が動かしていても振り分けと声の一覧に使いません。切り替えると Worker が数秒だけ再接続します。",
+    engineTurnedOn: "{engine} をオンにしました",
+    engineTurnedOff: "{engine} をオフにしました",
+    engineSwitchLabel: "{engine} を使う",
+    guildScopeTitle: "担当するサーバー",
+    guildScopeDescription: "この公式Worker が読み上げを担当するサーバーです。",
+    guildScopeAll: "全サーバー",
+    guildScopeAllHint: "すべてのサーバーで使います（既定）",
+    guildScopeSelected: "指定したサーバーだけ",
+    guildScopeSelectedHint: "下で指定したサーバーでだけ使います。専用の Worker や試験運用に使えます",
+    guildScopeUpdated: "担当するサーバーを変更しました",
+    noAssignedGuilds: "サーバーを指定していないため、どのサーバーでも使われません。",
+    addGuild: "追加",
+    searchGuild: "サーバー名で検索",
+    noGuildFound: "一致するサーバーはありません",
+    openWorker: "{name} の詳細",
     // サービス設定
     systemTitle: "サービス設定",
     systemDescription: "サービス全体の上限・新しいサーバーの初期値・お知らせ・読み上げの一時停止を設定します。",
@@ -567,6 +586,13 @@ export const ja = {
     voiceNotListed: "設定中の声（{engine}）は、対応するWorkerがオフラインのため現在一覧にありません。Workerが接続されると表示されます。",
     noAvailableEngines: "ありません（Worker タブの設定を確認してください）",
     engineUnavailable: "{engine} はこのサーバーで使えません。使えるエンジンの声を選んでください。",
+    enginesTitle: "使えるエンジン",
+    enginesDescription:
+      "オフにしたエンジンは、このサーバーの声の選択肢と読み上げに使いません。マイボイスがオフにしたエンジンの声のメンバーは、このサーバーではデフォルト音声で読み上げます。",
+    engineUsedByDefault: "デフォルト音声で使っているため、オフにできません",
+    engineNotProvided: "このサーバーで使える Worker が提供していません",
+    engineTurnedOn: "{engine} をオンにしました",
+    engineTurnedOff: "{engine} をオフにしました",
     engine: "音声エンジン",
     speaker: "話者",
     style: "スタイル",

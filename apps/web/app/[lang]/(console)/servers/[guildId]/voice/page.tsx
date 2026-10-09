@@ -7,6 +7,7 @@ import { getGuildForPage, orNotFound } from "@/lib/server/loaders"
 import { getGuildSettings } from "@/services/guilds"
 import { listVoices } from "@/services/voices"
 
+import { GuildEngineSettings } from "@/features/servers/guild-engine-settings"
 import { GuildVoiceForm } from "@/features/servers/guild-voice-form"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -36,12 +37,21 @@ async function Voice({ params }: { params: PageProps<"/[lang]/servers/[guildId]/
   if (!guild) return null
   const [settings, voices] = await orNotFound(Promise.all([getGuildSettings(guildId), listVoices()]))
   return (
-    <GuildVoiceForm
-      key={guildId}
-      guildId={guildId}
-      voice={settings.voice}
-      voices={voices}
-      availableEngines={guild.availableEngines}
-    />
+    <div className="flex flex-col gap-4">
+      <GuildVoiceForm
+        key={guildId}
+        guildId={guildId}
+        voice={settings.voice}
+        voices={voices}
+        availableEngines={guild.availableEngines}
+      />
+      <GuildEngineSettings
+        key={`${guildId}:${settings.disabledEngines.join()}`}
+        guildId={guildId}
+        disabledEngines={settings.disabledEngines}
+        defaultEngine={settings.voice.engine}
+        availableEngines={guild.availableEngines}
+      />
+    </div>
   )
 }

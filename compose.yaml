@@ -109,7 +109,7 @@ services:
       gateway: { condition: service_healthy }
 
   # 公式Worker（同じマシンで VOICEVOX を動かす場合）。
-  # トークンは Web GUI ではなく管理コマンドで発行する（README の「公式Worker の追加」）
+  # トークンは運営コンソールの「Worker」→「公式Worker」で発行し、.env の OFFICIAL_WORKER_TOKEN に設定する
   official-worker:
     <<: *app
     image: voiloid/worker:${IMAGE_TAG:-latest}
