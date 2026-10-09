@@ -17,7 +17,22 @@
    - `BACKUP_DIR=/srv/voiloid/backups` のように絶対パスにする
    - 秘匿値は `openssl rand -base64 32` などで生成する
 
-4. GitHub Actions の self-hosted runner を登録する（Settings → Actions → Runners）。ラベルに `voiloid-production` を付け、runner のユーザーを `docker` グループに入れる
+4. GitHub Actions の self-hosted runner を登録する（Settings → Actions → Runners → New self-hosted runner）。`config.sh` は root では動かない（`Must not run with sudo`）ため、専用のユーザーで実行する
+
+   ```bash
+   sudo useradd -m -s /bin/bash actions
+   sudo usermod -aG docker actions
+   sudo chown -R actions:actions /srv/voiloid   # .env を読み、state に書き込めるようにする
+   sudo -iu actions
+   # ここで GitHub の画面に表示されるダウンロードのコマンドを実行してから:
+   ./config.sh --url https://github.com/rebuilerdev/voiloid --token <画面のトークン> --labels voiloid-production
+   exit
+   cd /home/actions/actions-runner
+   sudo ./svc.sh install actions   # サービスとして登録（ここは sudo が必要）
+   sudo ./svc.sh start
+   ```
+
+   - 公開リポジトリのため、Settings → Actions → General → 「Fork pull request workflows from outside collaborators」を「Require approval for all outside collaborators」にする（外部のプルリクエストでこの runner を使わせない）
 
 ### GitHub リポジトリ
 
@@ -136,19 +151,29 @@ DEPLOY_ENV_FILE=/srv/voiloid/.env ./scripts/restore.sh /srv/voiloid/backups/voil
 
 `.env` の秘匿値の変更、DB の復元・Migration・デプロイ、監査ログの編集・削除、メッセージ本文の閲覧（保存していません）。これらはサーバー上で行います（本書の各章を参照）。
 
-## 7. 公式Worker の追加（コマンド）
+## 7. 公式Worker の追加
 
-運営コンソールの「公式Worker」から追加できます。Web を使えない場合は管理コマンドでも操作できます（トークンは表示されたときしか確認できません）。
+公式Worker の登録・トークン再発行・削除は、運営コンソールの「Worker」→「公式Worker」タブ（`/admin/workers`、editor 以上）からだけ行えます。操作した運営者は監査ログ（`admin.worker.*`）に残ります。本番マシン上で DB に直接書き込む管理コマンドはありません。
 
-```bash
-docker compose --env-file /srv/voiloid/.env run --rm api node dist/admin.js create-official-worker official-tokyo-01 VOICEVOX,AivisSpeech
-docker compose --env-file /srv/voiloid/.env run --rm api node dist/admin.js list-official-workers
-docker compose --env-file /srv/voiloid/.env run --rm api node dist/admin.js rotate-official-worker <公開 ID>
-docker compose --env-file /srv/voiloid/.env run --rm api node dist/admin.js delete-official-worker <公開 ID>
-```
+1. 「公式Workerを追加」から名前と対応エンジンを入力する
+2. 表示された接続トークンを控える（表示されるのはこのときだけ。DB にはハッシュだけを保存する）
+3. 下のどちらかの方法で起動する。トークンが漏れた場合は「トークン再発行」で古いトークンを無効にする
 
 - 同じマシンで動かす場合: `.env` の `OFFICIAL_WORKER_TOKEN` に設定すると、デプロイ時に `official-worker` と `voicevox` も起動します
 - 別のマシンで動かす場合: Worker イメージを `CONTROL_SERVER=wss://<APP_DOMAIN>/worker` で起動します
+
+## 7-2. サブボットの追加
+
+サブボットは、同じサーバーの別のボイスチャンネルで同時に読み上げるための Bot です（音声を流すだけで、コマンドとメッセージはメインの Bot が扱う）。
+
+1. Discord Developer Portal でサブボットごとにアプリを作り、Bot のトークンを発行する（Privileged Gateway Intents は不要）。名前とアイコンはここで設定する
+2. 本番の `.env` の `SUB_BOT_TOKENS` にトークンをカンマ区切りで書く（並び順が表示順になる）
+3. Bot を再起動する（Actions → Deploy → Run workflow で再デプロイする）
+4. 各サーバーの管理者が、Web のサーバーの「Overview」→「Bot」から、未参加のサブボットを「招待」する
+
+- Bot は起動時に、各 Bot と参加しているサーバーを DB に記録し、その後の参加・退出も記録する。サーバー一覧のカードには「サブボット 1 / 2 参加中」のように表示される
+- サブボットの招待で求める権限は「チャンネルを見る・接続・発言」だけ（スラッシュコマンドは登録しない）
+- `SUB_BOT_TOKENS` から外したサブボットは画面に表示されなくなる（記録は残る）
 
 ## 8. ログ・状態の確認
 

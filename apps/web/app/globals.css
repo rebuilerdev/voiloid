@@ -137,3 +137,22 @@
     cursor: pointer;
   }
 }
+/* ログインページ: 読み上げ中の波形 */
+@keyframes voiloid-wave {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.voiloid-wave {
+  animation: voiloid-wave 1.1s ease-in-out infinite;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .voiloid-wave {
+    animation: none;
+  }
+}

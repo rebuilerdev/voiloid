@@ -4,6 +4,7 @@ import { auditRepository } from "./audit.repository"
 import { operatorRepository } from "./operator.repository"
 import { systemSettingsRepository } from "./system-settings.repository"
 import { botProfileRepository } from "./bot-profile.repository"
+import { botRepository } from "./bot.repository"
 import { dictionaryRepository } from "./dictionary.repository"
 import { guildSettingsRepository } from "./guild-settings.repository"
 import { guildRepository } from "./guild.repository"
@@ -18,6 +19,7 @@ export function createRepositories(db: DbClient) {
     admin: adminRepository(db),
     audit: auditRepository(db),
     botProfiles: botProfileRepository(db),
+    bots: botRepository(db),
     dictionary: dictionaryRepository(db),
     guildSettings: guildSettingsRepository(db),
     guilds: guildRepository(db),
@@ -36,6 +38,7 @@ export { dictionaryWordKey, type DictionaryInput } from "./dictionary.repository
 export type { PageInput, PageResult } from "./admin.repository"
 export type { AuditEntry } from "./audit.repository"
 export type { BotProfileUpdate } from "./bot-profile.repository"
+export type { BotInfo } from "./bot.repository"
 export type { DiscordGuildInfo } from "./guild.repository"
 export type { GuildSettingsPatch } from "./guild-settings.repository"
 export type { SystemSettingsPatch } from "./system-settings.repository"

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 import { silentLogger } from "../../test/fakes"
 import type { Commands } from "../core/commands"
 import { SessionManager } from "../core/sessions"
-import { channelName, createBotPool, guildInfo, registerEvents } from "./bot"
+import { botIdentity, channelName, createBotPool, guildInfo, registerEvents } from "./bot"
 import { commandDefinitions } from "./definitions"
 import { toReplyOptions } from "./embeds"
 import { leaveGuild, registerCommands } from "./register"
@@ -103,6 +103,24 @@ describe("guildInfo / channelName", () => {
     expect(channelName(fakeClient("b", { name: "雑談" }) as never, "g1", "vc1")).toBe("雑談")
     expect(channelName(fakeClient("b", null) as never, "g1", "vc1")).toBeNull()
   })
+
+  it("Bot の情報と参加しているサーバーを同期用に変換する", () => {
+    const client = {
+      user: { id: "b1", username: "Voiloid 2", avatar: "hash" },
+      guilds: {
+        cache: new Map([
+          ["g1", {}],
+          ["g2", {}],
+        ]),
+      },
+    }
+    expect(botIdentity(client as never)).toEqual({
+      id: "b1",
+      name: "Voiloid 2",
+      avatar: "hash",
+      guildIds: ["g1", "g2"],
+    })
+  })
 })
 
 describe("registerEvents", () => {
@@ -130,16 +148,20 @@ describe("registerEvents", () => {
       left: vi.fn(() => Promise.resolve()),
     }
     const sessions = { get: vi.fn(), moved: vi.fn(() => Promise.resolve()), inGuild: vi.fn(() => []), stop: vi.fn() }
+    const botSync = { syncAll: vi.fn(), joined: vi.fn(() => Promise.resolve()), left: vi.fn(() => Promise.resolve()) }
+    Object.assign(main, { user: { id: "bot1" } })
+    const sub = Object.assign(new EventEmitter(), { user: { id: "bot2" } })
     registerEvents({
       main: main as never,
-      allClients: [{ user: { id: "bot1" } }] as never,
+      allClients: [main, sub] as never,
       commands: commands as unknown as Commands,
       reader: reader,
       sessions: sessions as never,
       guildSync: guildSync,
+      botSync,
       logger: silentLogger,
     })
-    return { main, reader, commands, guildSync, sessions }
+    return { main, sub, reader, commands, guildSync, botSync, sessions }
   }
 
   function interaction(commandName: string, sub?: string) {
@@ -227,6 +249,19 @@ describe("registerEvents", () => {
     expect(guildSync.updated).toHaveBeenCalled()
     expect(guildSync.left).toHaveBeenCalledWith("g1")
     expect(sessions.stop).toHaveBeenCalledWith({ key: "s" }, "guild_removed")
+  })
+
+  it("サブボットを含む各 Bot のサーバーへの参加・退出を記録する", async () => {
+    const { main, sub, botSync } = setup()
+    const guild = { id: "g1", name: "n", icon: null, ownerId: "o", memberCount: 1 }
+    main.emit(Events.GuildCreate, guild)
+    sub.emit(Events.GuildCreate, guild)
+    sub.emit(Events.GuildDelete, guild)
+    await tick()
+    expect(botSync.joined).toHaveBeenCalledWith("bot1", "g1")
+    expect(botSync.joined).toHaveBeenCalledWith("bot2", "g1")
+    expect(botSync.left).toHaveBeenCalledWith("bot2", "g1")
+    expect(botSync.left).not.toHaveBeenCalledWith("bot1", "g1")
   })
 
   it.each([

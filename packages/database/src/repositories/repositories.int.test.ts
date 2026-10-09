@@ -235,3 +235,40 @@ describe("auditRepository", () => {
     expect(logs[0]?.metadata).toEqual({ x: 1 })
   })
 })
+
+describe("botRepository", () => {
+  const main = { discordUserId: snowflake(), role: "MAIN" as const, position: 0, name: "Voiloid", avatar: null }
+  const sub1 = { discordUserId: snowflake(), role: "SUB" as const, position: 1, name: "Voiloid 2", avatar: "hash" }
+  const sub2 = { discordUserId: snowflake(), role: "SUB" as const, position: 2, name: "Voiloid 3", avatar: null }
+
+  it("Bot を同期し、設定から外れた Bot を無効にする（メイン → サブの順）", async () => {
+    await repos.bots.syncBots([sub2, main, sub1])
+    expect((await repos.bots.listActive()).map((b) => b.name)).toEqual(["Voiloid", "Voiloid 2", "Voiloid 3"])
+
+    await repos.bots.syncBots([main, { ...sub1, name: "renamed" }])
+    expect((await repos.bots.listActive()).map((b) => b.name)).toEqual(["Voiloid", "renamed"])
+    expect(await db.bot.findUnique({ where: { discordUserId: sub2.discordUserId } })).toMatchObject({ active: false })
+  })
+
+  it("参加しているサーバーを置き換え・追加・削除し、無効な Bot は数えない", async () => {
+    await repos.bots.syncBots([main, sub1, sub2])
+    const [g1, g2, g3] = [snowflake(), snowflake(), snowflake()]
+    await repos.bots.replaceMemberships(main.discordUserId, [g1, g2])
+    await repos.bots.replaceMemberships(sub1.discordUserId, [g1])
+    await repos.bots.replaceMemberships(sub2.discordUserId, [g1])
+    // 置き換え: g2 から抜け、g3 に入った
+    await repos.bots.replaceMemberships(main.discordUserId, [g1, g3])
+    await repos.bots.addMembership(sub1.discordUserId, g3)
+    await repos.bots.addMembership(sub1.discordUserId, g3)
+    await repos.bots.removeMembership(sub1.discordUserId, g1)
+
+    let members = await repos.bots.membersByGuild([g1, g2, g3])
+    expect(members.get(g1)).toEqual(new Set([main.discordUserId, sub2.discordUserId]))
+    expect(members.get(g2)).toBeUndefined()
+    expect(members.get(g3)).toEqual(new Set([main.discordUserId, sub1.discordUserId]))
+
+    await repos.bots.syncBots([main, sub1])
+    members = await repos.bots.membersByGuild([g1])
+    expect(members.get(g1)).toEqual(new Set([main.discordUserId]))
+  })
+})

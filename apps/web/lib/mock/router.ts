@@ -26,6 +26,7 @@ import {
   BOT_NICKNAME_LENGTH,
   MAX_CHARACTERS_RANGE,
   type Guild,
+  type GuildBot,
   type GuildBotProfile,
   type GuildDetail,
   type GuildSettings,
@@ -42,9 +43,12 @@ import {
   type WorkerGuildConnection,
 } from "@/types/worker"
 
+import { botInviteUrl } from "@/lib/config"
 import { createPreviewWav } from "@/lib/mock/audio"
 import {
   BOT_DEFAULT_NAME,
+  mockBots,
+  mockSubBotGuilds,
   charactersThisMonth,
   channels,
   dailyCharacters,
@@ -90,6 +94,24 @@ function isValidAvatar(dataUrl: string) {
   return Math.floor((m[2].length * 3) / 4) <= BOT_AVATAR.maxBytes
 }
 
+function guildBots(g: MockGuild): GuildBot[] {
+  return mockBots.map((bot) => ({
+    id: bot.id,
+    name: bot.name,
+    role: bot.role,
+    present: bot.role === "main" ? g.botInstalled : (mockSubBotGuilds[bot.id]?.includes(g.id) ?? false),
+    inviteUrl:
+      bot.role === "main"
+        ? botInviteUrl(g.id)
+        : `https://discord.com/oauth2/authorize?client_id=${bot.id}&scope=bot&permissions=3146752&guild_id=${g.id}&disable_guild_select=true`,
+  }))
+}
+
+function subBotCount(g: MockGuild): Guild["subBots"] {
+  const subs = guildBots(g).filter((b) => b.role === "sub")
+  return { present: subs.filter((b) => b.present).length, total: subs.length }
+}
+
 function toGuild(g: MockGuild): Guild {
   const settings = getStore().settings.get(g.id)
   const voice = settings?.voice
@@ -107,6 +129,7 @@ function toGuild(g: MockGuild): Guild {
     lastActiveAt: g.botInstalled
       ? new Date(Date.now() - g.lastActiveMinutesAgo * 60_000).toISOString()
       : undefined,
+    subBots: g.botInstalled ? subBotCount(g) : undefined,
   }
 }
 
@@ -915,6 +938,7 @@ const routes: [method: string, pattern: string, handler: Handler][] = [
         currentWorkerName: g.botInstalled ? currentWorkerName(g.id) : undefined,
         messagesReadToday: g.messagesReadToday,
         availableEngines: g.botInstalled ? serverEngines(g.id) : [],
+        bots: guildBots(g),
       }
       return ok(detail)
     },

@@ -96,6 +96,17 @@ export const channels: GuildChannel[] = [
 
 export const BOT_DEFAULT_NAME = "Voiloid"
 
+/** 読み上げ Bot（メイン → サブボット）と、サブボットが参加しているサーバー */
+export const mockBots = [
+  { id: "900000000000000001", name: "Voiloid", role: "main" },
+  { id: "900000000000000002", name: "Voiloid 2", role: "sub" },
+  { id: "900000000000000003", name: "Voiloid 3", role: "sub" },
+] as const
+export const mockSubBotGuilds: Record<string, readonly string[]> = {
+  "900000000000000002": ["1029384756", "1122334455"],
+  "900000000000000003": ["1029384756"],
+}
+
 export function defaultGuildSettings(index: number): GuildSettings {
   return {
     readingMode: "command",

@@ -72,6 +72,12 @@ enum OperatorRole {
   VIEWER
 }
 
+/// MAIN = コマンドとメッセージを扱う Bot / SUB = 同じサーバーの別の VC で読み上げるだけの Bot
+enum BotRole {
+  MAIN
+  SUB
+}
+
 enum AnnouncementLevel {
   INFO
   WARNING
@@ -142,6 +148,40 @@ model SystemSettings {
 
   updatedByUserId String?  @db.Uuid
   updatedAt       DateTime @updatedAt
+}
+
+/// 読み上げ Bot（メイン・サブボット）。Bot プロセスが起動時に同期する
+model Bot {
+  discordUserId String  @id @db.VarChar(20)
+  role          BotRole
+  /// 表示順（メイン = 0、サブボットは .env の順）
+  position      Int
+
+  name   String  @db.VarChar(100)
+  avatar String? @db.VarChar(64)
+
+  /// 今の設定（.env）に含まれる。外されたサブボットは false にして残す
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships GuildBotMembership[]
+
+  @@index([active, position])
+}
+
+/// Bot が参加しているサーバー（Bot 未導入のサーバーも含めるため、Discord のサーバー ID で持つ）
+model GuildBotMembership {
+  botUserId      String @db.VarChar(20)
+  discordGuildId String @db.VarChar(20)
+
+  createdAt DateTime @default(now())
+
+  bot Bot @relation(fields: [botUserId], references: [discordUserId], onDelete: Cascade)
+
+  @@id([botUserId, discordGuildId])
+  @@index([discordGuildId])
 }
 
 /// マイボイス（全サーバー共通）。行が無い = 各サーバーのデフォルト音声を使う

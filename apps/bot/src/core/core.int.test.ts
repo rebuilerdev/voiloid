@@ -15,6 +15,7 @@ import { FakeConnector, fakeState, silentLogger, until } from "../../test/fakes"
 import { createCommands, type CommandContext } from "./commands"
 import { createControlHandler } from "./control"
 import { createGuildConfigStore } from "./guild-config"
+import { createBotSync } from "./bot-sync"
 import { createGuildSync } from "./guild-sync"
 import { cleanupStaleSessions, createSessionRecorder } from "./recorder"
 import { createServiceState } from "./service-state"
@@ -399,6 +400,23 @@ describe("guild config / sync / recorder", () => {
     ])
     await sync.left(b)
     expect((await repos.guilds.findByDiscordId(b))?.botInstalled).toBe(false)
+  })
+
+  it("Bot と参加しているサーバーを同期し、参加・退出を記録する", async () => {
+    const sync = createBotSync(repos, silentLogger)
+    const [main, sub1, sub2, g1, g2] = [snowflake(), snowflake(), snowflake(), snowflake(), snowflake()]
+    const bot = (id: string, name: string, guildIds: string[]) => ({ id, name, avatar: null, guildIds })
+    await sync.syncAll(bot(main, "Voiloid", [g1, g2]), [bot(sub1, "Voiloid 2", [g1]), bot(sub2, "Voiloid 3", [])])
+    expect((await repos.bots.listActive()).map((b) => [b.name, b.role, b.position])).toEqual([
+      ["Voiloid", "MAIN", 0],
+      ["Voiloid 2", "SUB", 1],
+      ["Voiloid 3", "SUB", 2],
+    ])
+    await sync.joined(sub2, g2)
+    await sync.left(sub1, g1)
+    const members = await repos.bots.membersByGuild([g1, g2])
+    expect(members.get(g1)).toEqual(new Set([main]))
+    expect(members.get(g2)).toEqual(new Set([main, sub2]))
   })
 
   it("起動時に前回のセッションを片付ける", async () => {

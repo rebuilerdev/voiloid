@@ -7,6 +7,7 @@ import type { Formatters } from "@/lib/format"
 import type { GuildDetail } from "@/types/guild"
 
 import { ReadingStatusBadge } from "@/features/servers/reading-status-badge"
+import { ServerBots } from "@/features/servers/server-bots"
 
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -77,6 +78,8 @@ export function ServerOverview({ guild, t, f }: { guild: GuildDetail; t: Diction
           )}
         </CardContent>
       </Card>
+
+      <ServerBots bots={guild.bots} t={t} />
     </div>
   )
 }

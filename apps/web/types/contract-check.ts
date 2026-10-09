@@ -25,6 +25,7 @@ import type { ApiErrorCode } from "@/types/api"
 import type { DictionaryEntry, DictionaryEntryInput } from "@/types/dictionary"
 import type {
   Guild,
+  GuildBot,
   GuildBotProfile,
   GuildChannel,
   GuildDetail,
@@ -49,6 +50,7 @@ export type ContractChecks = [
   Assert<Readable<Contract.MemberGuild, MemberGuild>>,
   Assert<Readable<Contract.Guild, Guild>>,
   Assert<Readable<Contract.GuildDetail, GuildDetail>>,
+  Assert<Readable<Contract.GuildBot, GuildBot>>,
   Assert<Readable<Contract.GuildChannel, GuildChannel>>,
   Assert<Readable<Contract.GuildSettings, GuildSettings>>,
   Assert<Readable<Contract.GuildBotProfile, GuildBotProfile>>,

@@ -149,9 +149,89 @@ describe("GET /api/guilds/:guildId", () => {
       readingEnabled: false,
       messagesReadToday: 0,
       availableEngines: [],
+      bots: [],
     })
     // 設定は Bot 導入後のみ
     expect((await call(h, "GET", `/api/guilds/${id}/settings`, { user })).statusCode).toBe(404)
+  })
+})
+
+describe("Bot（メイン・サブボット）の参加状況", () => {
+  const MAIN = "900000000000000001"
+  const SUB1 = "900000000000000002"
+  const SUB2 = "900000000000000003"
+
+  async function setupBots(guildId: string) {
+    await h.db.bot.createMany({
+      data: [
+        { discordUserId: MAIN, role: "MAIN", position: 0, name: "Voiloid", avatar: "mainhash" },
+        { discordUserId: SUB1, role: "SUB", position: 1, name: "Voiloid 2", avatar: null },
+        { discordUserId: SUB2, role: "SUB", position: 2, name: "Voiloid 3", avatar: null },
+        // 設定から外したサブボットは表示しない
+        { discordUserId: "900000000000000009", role: "SUB", position: 3, name: "old", active: false },
+      ],
+    })
+    await h.db.guildBotMembership.createMany({
+      data: [
+        { botUserId: MAIN, discordGuildId: guildId },
+        { botUserId: SUB1, discordGuildId: guildId },
+        { botUserId: "900000000000000009", discordGuildId: guildId },
+      ],
+    })
+  }
+
+  it("詳細: Bot ごとに参加中か・アイコン・招待 URL（サブボットはコマンドなし）を返す", async () => {
+    const guild = await installGuild(h)
+    await setupBots(guild.discordGuildId)
+    const user = await login(h, [{ id: guild.discordGuildId }])
+    const detail = (await call(h, "GET", `/api/guilds/${guild.discordGuildId}`, { user })).data() as {
+      bots: { id: string; name: string; avatarUrl?: string; role: string; present: boolean; inviteUrl: string }[]
+      subBots: unknown
+    }
+    expect(detail.bots.map((b) => [b.name, b.role, b.present])).toEqual([
+      ["Voiloid", "main", true],
+      ["Voiloid 2", "sub", true],
+      ["Voiloid 3", "sub", false],
+    ])
+    expect(detail.subBots).toEqual({ present: 1, total: 2 })
+    expect(detail.bots[0]?.avatarUrl).toBe(`https://cdn.discordapp.com/avatars/${MAIN}/mainhash.png?size=128`)
+    expect(detail.bots[1]).not.toHaveProperty("avatarUrl")
+
+    const main = new URL(detail.bots[0]?.inviteUrl ?? "")
+    expect(main.searchParams.get("client_id")).toBe("123456789012345678")
+    expect(main.searchParams.get("scope")).toBe("bot applications.commands")
+    const sub = new URL(detail.bots[2]?.inviteUrl ?? "")
+    expect(sub.searchParams.get("client_id")).toBe(SUB2)
+    expect(sub.searchParams.get("scope")).toBe("bot")
+    expect(sub.searchParams.get("guild_id")).toBe(guild.discordGuildId)
+  })
+
+  it("一覧: サブボットの参加数を返す。Bot 未導入のサーバーでは、メインは未参加として招待できる", async () => {
+    const guild = await installGuild(h)
+    await setupBots(guild.discordGuildId)
+    const notInstalled = snowflake()
+    const user = await login(h, [{ id: guild.discordGuildId }, { id: notInstalled }])
+    const guilds = (await call(h, "GET", "/api/guilds", { user })).data() as Record<string, unknown>[]
+    expect(guilds[0]).toMatchObject({ subBots: { present: 1, total: 2 } })
+    expect(guilds[1]).not.toHaveProperty("subBots")
+
+    const detail = (await call(h, "GET", `/api/guilds/${notInstalled}`, { user })).data() as {
+      bots: { role: string; present: boolean }[]
+    }
+    expect(detail.bots.map((b) => [b.role, b.present])).toEqual([
+      ["main", false],
+      ["sub", false],
+      ["sub", false],
+    ])
+  })
+
+  it("サブボットが無ければ subBots を返さない", async () => {
+    const guild = await installGuild(h)
+    await h.db.bot.create({ data: { discordUserId: MAIN, role: "MAIN", position: 0, name: "Voiloid" } })
+    const user = await login(h, [{ id: guild.discordGuildId }])
+    const detail = (await call(h, "GET", `/api/guilds/${guild.discordGuildId}`, { user })).data()
+    expect(detail).toMatchObject({ bots: [expect.objectContaining({ role: "main", present: true })] })
+    expect(detail).not.toHaveProperty("subBots")
   })
 })
 

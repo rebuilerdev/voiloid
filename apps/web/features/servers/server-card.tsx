@@ -48,6 +48,19 @@ export function ServerCard({ guild }: { guild: Guild }) {
             </dd>
             <dt className="text-muted-foreground">{t.servers.voice}</dt>
             <dd className="truncate">{guild.voiceName ?? t.common.none}</dd>
+            {guild.subBots && (
+              <>
+                <dt className="text-muted-foreground">{t.servers.subBots}</dt>
+                <dd>
+                  <StatusBadge tone={guild.subBots.present < guild.subBots.total ? "warning" : "success"}>
+                    {fmt(t.servers.subBotsCount, {
+                      present: f.number(guild.subBots.present),
+                      total: f.number(guild.subBots.total),
+                    })}
+                  </StatusBadge>
+                </dd>
+              </>
+            )}
           </dl>
         ) : (
           <div className="flex flex-col gap-1.5">

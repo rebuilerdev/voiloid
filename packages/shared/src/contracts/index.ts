@@ -116,6 +116,19 @@ export interface Guild {
   readingStatus?: ReadingStatus
   voiceName?: string
   lastActiveAt?: string
+  /** サブボットの参加状況（サブボットがある場合のみ） */
+  subBots?: { present: number; total: number }
+}
+
+export interface GuildBot {
+  /** Discord のユーザー ID */
+  id: string
+  name: string
+  avatarUrl?: string
+  role: "main" | "sub"
+  /** サーバーに参加している */
+  present: boolean
+  inviteUrl: string
 }
 
 export interface GuildSession {
@@ -129,6 +142,8 @@ export interface GuildDetail extends Guild {
   currentWorkerName?: string
   messagesReadToday: number
   availableEngines: string[]
+  /** 読み上げ Bot（メイン → サブボット）とサーバーへの参加状況 */
+  bots: GuildBot[]
 }
 
 export interface GuildChannel {

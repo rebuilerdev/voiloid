@@ -15,9 +15,10 @@ import {
   type GuildSettings as DbGuildSettings,
   type GuildSettingsPatch,
 } from "@voiloid/database"
-import { DEFAULT_GUILD_VOICE, validationError } from "@voiloid/shared"
+import { botInviteUrl, DEFAULT_GUILD_VOICE, validationError } from "@voiloid/shared"
 import type {
   Guild as ApiGuild,
+  GuildBot,
   GuildChannel,
   GuildDetail,
   GuildSettings,
@@ -42,6 +43,12 @@ const TEXT_TYPES = new Set([0, 5]) // GUILD_TEXT / GUILD_ANNOUNCEMENT
 const VOICE_TYPES = new Set([2, 13]) // GUILD_VOICE / GUILD_STAGE_VOICE
 
 const cachedChannelsSchema = z.array(z.object({ id: z.string(), name: z.string(), type: z.enum(["text", "voice"]) }))
+
+/** サブボットの参加数（サブボットが無ければ undefined） */
+function subBotCount(bots: GuildBot[]): { present: number; total: number } | undefined {
+  const subs = bots.filter((b) => b.role === "sub")
+  return subs.length > 0 ? { present: subs.filter((b) => b.present).length, total: subs.length } : undefined
+}
 
 export function toApiSettings(settings: DbGuildSettings, specificWorkerPublicId: string | undefined): GuildSettings {
   return {
@@ -101,17 +108,52 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
     return result
   }
 
+  /** 有効な Bot（メイン → サブボット）と、サーバーごとの参加している Bot */
+  async function botMembership(discordGuildIds: string[]) {
+    const [bots, members] = await Promise.all([
+      deps.repos.bots.listActive(),
+      deps.repos.bots.membersByGuild(discordGuildIds),
+    ])
+    return { bots, members }
+  }
+
+  /** サーバーでの各 Bot の状態。メインの Bot はサーバーの「Bot 導入済み」に合わせる */
+  function guildBots(
+    { bots, members }: Awaited<ReturnType<typeof botMembership>>,
+    discordGuildId: string,
+    botInstalled: boolean,
+  ): GuildBot[] {
+    const present = members.get(discordGuildId)
+    return bots.map((bot) => {
+      const role = bot.role === "MAIN" ? "main" : "sub"
+      return {
+        id: bot.discordUserId,
+        name: bot.name,
+        avatarUrl: bot.avatar ? cdn.userAvatar(bot.discordUserId, bot.avatar) : undefined,
+        role,
+        present: role === "main" ? botInstalled : (present?.has(bot.discordUserId) ?? false),
+        // メインはアプリの Client ID、サブボットは Bot のユーザー ID（= アプリの ID）で招待する
+        inviteUrl: botInviteUrl(
+          role === "main" ? deps.config.DISCORD_CLIENT_ID : bot.discordUserId,
+          role,
+          discordGuildId,
+        ),
+      }
+    })
+  }
+
   return {
     /** 管理できるサーバーの一覧（Bot 未導入を含む） */
     async list(session: Session): Promise<ApiGuild[]> {
       const manageable = await access.manageableGuilds(session)
       const installed = manageable.flatMap((g) => (g.guild?.botInstalled ? [g.guild] : []))
-      const [sessions, lastActivity, settings, bot, names] = await Promise.all([
+      const [sessions, lastActivity, settings, bot, names, membership] = await Promise.all([
         live.guildSessions(installed.map((g) => g.discordGuildId)),
         deps.repos.usage.lastActivity(installed.map((g) => g.id)),
         deps.repos.guildSettings.findManyByGuildIds(installed.map((g) => g.id)),
         live.botHeartbeat(),
         installed.length > 0 ? speakerNames(session.userId) : Promise.resolve(new Map<string, string>()),
+        botMembership(installed.map((g) => g.discordGuildId)),
       ])
       const settingsById = new Map(settings.map((s) => [s.guildId, s]))
 
@@ -138,6 +180,7 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
               : "idle",
           voiceName: names.get(`${voice.engine}:${voice.speakerId}`),
           lastActiveAt: lastActivity.get(guild.id)?.toISOString(),
+          subBots: subBotCount(guildBots(membership, discord.id, true)),
         }
       })
       // 最近使われたサーバーから順に並べる
@@ -152,6 +195,7 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
     async detail(session: Session, discordGuildId: string): Promise<GuildDetail> {
       const { discord, guild } = await access.requireManageable(session, discordGuildId)
       const iconUrl = discord.icon ? cdn.guildIcon(discord.id, discord.icon) : undefined
+      const membership = await botMembership([discord.id])
       if (!guild?.botInstalled) {
         return {
           id: discord.id,
@@ -161,6 +205,7 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
           readingEnabled: false,
           messagesReadToday: 0,
           availableEngines: [],
+          bots: guildBots(membership, discord.id, false),
         }
       }
 
@@ -179,6 +224,7 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
         }),
       ])
       const current = sessions.get(discord.id)?.[0]
+      const bots = guildBots(membership, discord.id, true)
       return {
         id: discord.id,
         name: discord.name,
@@ -196,6 +242,8 @@ export function createGuildService(deps: AppDeps, access: AccessService, live: L
         currentWorkerName: lastUsage?.worker?.name,
         messagesReadToday,
         availableEngines: engines.get(guild.id) ?? [],
+        bots,
+        subBots: subBotCount(bots),
       }
     },
 

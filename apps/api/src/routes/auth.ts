@@ -106,16 +106,24 @@ export function authRoutes(app: FastifyInstance, deps: AppDeps, access: AccessSe
       .redirect(safeNext(next))
   })
 
-  app.post("/api/auth/logout", async (request, reply) => {
-    const session = request.session
-    if (session) {
-      await deps.sessions.destroy(session.id)
-      await access.clearCache(session)
-      // Discord 側のトークンも失効させる（失敗してもログアウトは完了させる）
-      await deps.discord.revokeToken(session.refreshToken).catch(() => undefined)
-    }
-    // 303: フォーム送信後に GET で /login を開く
-    return reply.clearCookie(SESSION_COOKIE, cookieOptions).redirect("/login", 303)
+  // Web のログアウトはフォーム送信（application/x-www-form-urlencoded）で来るため、このルートだけ受け付ける。
+  // 本文は使わない。他サイトからの送信は Origin の検証（onRequest）で拒否される
+  void app.register((scope, _options, done) => {
+    scope.addContentTypeParser("application/x-www-form-urlencoded", (_request, _payload, parsed) => {
+      parsed(null, undefined)
+    })
+    scope.post("/api/auth/logout", async (request, reply) => {
+      const session = request.session
+      if (session) {
+        await deps.sessions.destroy(session.id)
+        await access.clearCache(session)
+        // Discord 側のトークンも失効させる（失敗してもログアウトは完了させる）
+        await deps.discord.revokeToken(session.refreshToken).catch(() => undefined)
+      }
+      // 303: フォーム送信後に GET で /login を開く
+      return reply.clearCookie(SESSION_COOKIE, cookieOptions).redirect("/login", 303)
+    })
+    done()
   })
 
   /** セッション切れの Cookie を消してログイン画面へ（Web のサーバー側で 401 を受けたときの遷移先） */

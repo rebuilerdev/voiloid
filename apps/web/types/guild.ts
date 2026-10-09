@@ -18,6 +18,20 @@ export interface Guild {
   /** 現在の読み上げ音声の話者名 */
   voiceName?: string
   lastActiveAt?: string
+  /** サブボットの参加状況（サブボットがある場合のみ） */
+  subBots?: { present: number; total: number }
+}
+
+/** 読み上げ Bot（メイン・サブボット）と、サーバーへの参加状況 */
+export interface GuildBot {
+  /** Discord のユーザー ID */
+  id: string
+  name: string
+  avatarUrl?: string
+  /** main = コマンドを受け付ける Bot / sub = 同じサーバーの別の VC で読み上げる Bot */
+  role: "main" | "sub"
+  present: boolean
+  inviteUrl: string
 }
 
 export interface GuildSession {
@@ -36,6 +50,8 @@ export interface GuildDetail extends Guild {
    * 仕様書 §63 に無い項目（Backend と要合意）
    */
   availableEngines: string[]
+  /** メイン → サブボットの順 */
+  bots: GuildBot[]
 }
 
 export interface GuildChannel {

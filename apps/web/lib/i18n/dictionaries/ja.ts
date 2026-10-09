@@ -119,9 +119,22 @@ export const ja = {
   login: {
     title: "ログイン",
     taglineLine1: "Discordの読み上げを",
-    taglineLine2: "もっと簡単に。",
+    // 改行してよい位置で区切る
+    taglineLine2: ["もっとカスタマイズ", "可能に。"],
+    lead: "読み上げBotの設定・辞書・声を、ブラウザからまとめて管理できます。",
     loginWithDiscord: "Discordでログイン",
+    privacy: "Discordの認可画面に移動します。Discordのパスワードが Voiloid に送られることはありません。",
     note: "ログインすると、あなたが管理するサーバーの読み上げ設定を変更できます。",
+    demo: {
+      caption: "テキストチャンネルの発言を、選んだ声でボイスチャンネルに読み上げます。",
+      textChannel: "聞き専",
+      voiceChannel: "雑談VC",
+      user: "ずんだもん",
+      time: "21:04",
+      message: "今日の作業、ここまでにしよう！",
+      reading: "読み上げ中",
+      voice: "ずんだもん（ノーマル）",
+    },
   },
   dashboard: {
     title: "ダッシュボード",
@@ -156,6 +169,8 @@ export const ja = {
     bot: "Bot",
     voice: "Voice",
     reading: "読み上げ",
+    subBots: "サブボット",
+    subBotsCount: "{present} / {total} 参加中",
     noMatch: "「{query}」に一致するサーバーはありません",
     emptyTitle: "サーバーがありません",
     emptyDescription: "管理権限を持つDiscordサーバーが見つかりませんでした。",
@@ -181,6 +196,15 @@ export const ja = {
       voiceChannel: "ボイスチャンネル",
       sessionStatus: "状態",
       noSession: "現在どのボイスチャンネルにも接続していません。",
+      bots: "Bot",
+      botsDescription:
+        "サブボットもサーバーにいると、同じサーバーの別のボイスチャンネルでも同時に読み上げられます。",
+      mainBot: "メイン",
+      subBot: "サブ",
+      present: "参加中",
+      absent: "未参加",
+      invite: "招待",
+      inviteLabel: "{name} をこのサーバーに招待",
     },
   },
   botProfile: {

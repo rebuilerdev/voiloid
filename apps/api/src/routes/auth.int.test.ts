@@ -154,6 +154,29 @@ describe("POST /api/auth/logout", () => {
     expect((await call(h, "GET", "/api/me", { user })).statusCode).toBe(401)
   })
 
+  it("Web のフォーム送信（application/x-www-form-urlencoded）でもログアウトできる", async () => {
+    const user = await login(h)
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/api/auth/logout",
+      headers: { cookie: user.cookie, origin: APP_ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      payload: "",
+    })
+    expect(res.statusCode).toBe(303)
+    expect((await call(h, "GET", "/api/me", { user })).statusCode).toBe(401)
+  })
+
+  it("フォーム送信を受け付けるのはログアウトだけ", async () => {
+    const user = await login(h)
+    const res = await h.app.inject({
+      method: "PATCH",
+      url: "/api/me",
+      headers: { cookie: user.cookie, origin: APP_ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      payload: "locale=en",
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
   it("他サイトからのログアウト要求（Origin 不一致）は拒否する", async () => {
     const user = await login(h)
     const res = await call(h, "POST", "/api/auth/logout", { user, origin: "https://evil.example.com" })

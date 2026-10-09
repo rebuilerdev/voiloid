@@ -38,7 +38,6 @@ export default defineConfig({
         "**/index.ts",
         // プロセスの起動処理（main）は E2E / スモークテストで確認する
         "apps/*/src/main.ts",
-        "apps/api/src/admin.ts",
         "apps/bot/src/scripts/**",
         "packages/database/prisma/**",
       ],

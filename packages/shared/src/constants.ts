@@ -40,3 +40,25 @@ export const DEFAULT_GUILD_VOICE = {
   pitch: 0,
   intonation: 1,
 } as const
+
+/** Bot の招待に必要な権限（Discord の権限ビット。いずれも 32 ビットに収まる） */
+export const BOT_INVITE_PERMISSIONS = {
+  /** 接続・発言・ニックネームの変更（サーバーごとの Bot 名） */
+  main: (1 << 20) | (1 << 21) | (1 << 26),
+  /** チャンネルを見る・接続・発言（サブボットは VC で音声を流すだけ） */
+  sub: (1 << 10) | (1 << 20) | (1 << 21),
+} as const
+
+/** Bot の招待 URL。サブボットはコマンドを登録しない（applications.commands を付けない） */
+export function botInviteUrl(clientId: string, role: "main" | "sub", guildId?: string): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    scope: role === "main" ? "bot applications.commands" : "bot",
+    permissions: String(BOT_INVITE_PERMISSIONS[role]),
+  })
+  if (guildId) {
+    params.set("guild_id", guildId)
+    params.set("disable_guild_select", "true")
+  }
+  return `https://discord.com/oauth2/authorize?${params.toString()}`
+}

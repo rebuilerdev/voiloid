@@ -18,7 +18,7 @@ export function LoginButton() {
       href={href}
       className={cn(
         buttonVariants({ size: "lg" }),
-        "h-10 w-full bg-[#5865F2] text-sm text-white hover:bg-[#4752C4]"
+        "h-11 w-full bg-[#5865F2] text-sm text-white hover:bg-[#4752C4]"
       )}
     >
       <DiscordLogoIcon weight="fill" className="size-5" />

@@ -5,10 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
-    "build": "node ../../scripts/build-app.mjs src/main.ts src/admin.ts",
+    "build": "node ../../scripts/build-app.mjs src/main.ts",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit",
-    "admin": "tsx --env-file-if-exists=.env src/admin.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1148.0",

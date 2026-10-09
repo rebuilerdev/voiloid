@@ -12,6 +12,7 @@ import {
 } from "discord.js"
 import type { Logger } from "pino"
 
+import type { createBotSync } from "../core/bot-sync"
 import type { CommandContext, Commands, Reply } from "../core/commands"
 import type { createGuildSync } from "../core/guild-sync"
 import type { Reader } from "../core/reader"
@@ -41,6 +42,14 @@ export function createClients(mainToken: string, subTokens: string[]) {
     },
   }
 }
+
+/** Bot の情報と参加しているサーバー（起動時の同期用） */
+export const botIdentity = (client: Client<true>) => ({
+  id: client.user.id,
+  name: client.user.username,
+  avatar: client.user.avatar,
+  guildIds: [...client.guilds.cache.keys()],
+})
 
 export const guildInfo = (guild: Guild) => ({
   discordGuildId: guild.id,
@@ -77,6 +86,7 @@ export function registerEvents(deps: {
   reader: Reader
   sessions: SessionManager
   guildSync: ReturnType<typeof createGuildSync>
+  botSync: ReturnType<typeof createBotSync>
   logger: Logger
 }) {
   const { main, commands, reader, sessions, logger } = deps
@@ -87,6 +97,16 @@ export function registerEvents(deps: {
     void deps.guildSync.left(guild.id).catch(() => undefined)
     for (const session of sessions.inGuild(guild.id)) void sessions.stop(session, "guild_removed")
   })
+
+  // 各 Bot（サブボットを含む）のサーバーへの参加・退出を記録する
+  for (const client of deps.allClients) {
+    client.on(Events.GuildCreate, (guild) => {
+      if (client.user) void deps.botSync.joined(client.user.id, guild.id).catch(() => undefined)
+    })
+    client.on(Events.GuildDelete, (guild) => {
+      if (client.user) void deps.botSync.left(client.user.id, guild.id).catch(() => undefined)
+    })
+  }
 
   main.on(Events.MessageCreate, (message) => {
     if (!message.inGuild() || message.system) return

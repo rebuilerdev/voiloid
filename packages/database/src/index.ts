@@ -15,6 +15,7 @@ export * from "./transactions/user.transactions"
 export * from "./transactions/worker.transactions"
 export {
   AnnouncementLevel,
+  BotRole,
   EngineHealth,
   OperatorRole,
   LongMessageBehavior,
@@ -26,4 +27,12 @@ export {
   WorkerStatus,
   WorkerType,
 } from "./generated/prisma/client"
-export type { Guild, GuildBotProfile, GuildSettings, Operator, SystemSettings, User } from "./generated/prisma/client"
+export type {
+  Bot,
+  Guild,
+  GuildBotProfile,
+  GuildSettings,
+  Operator,
+  SystemSettings,
+  User,
+} from "./generated/prisma/client"

@@ -7,6 +7,7 @@ import { Redis } from "ioredis"
 import { pino } from "pino"
 
 import { loadConfig } from "./config"
+import { createBotSync } from "./core/bot-sync"
 import { createCommands } from "./core/commands"
 import { createControlHandler } from "./core/control"
 import { createGuildConfigStore } from "./core/guild-config"
@@ -16,7 +17,7 @@ import { cleanupStaleSessions, createSessionRecorder } from "./core/recorder"
 import { createServiceState } from "./core/service-state"
 import { SessionManager } from "./core/sessions"
 import { createSynthesizer } from "./core/synthesizer"
-import { channelName, createBotPool, createClients, guildInfo, registerEvents } from "./discord/bot"
+import { botIdentity, channelName, createBotPool, createClients, guildInfo, registerEvents } from "./discord/bot"
 import { leaveGuild, registerCommands } from "./discord/register"
 import { createVoiceConnector } from "./discord/voice"
 
@@ -50,6 +51,10 @@ logger.info({ bots: [...readyClients.keys()] }, "bots ready")
 await cleanupStaleSessions(redis, repos, [...readyClients.keys()])
 const guildSync = createGuildSync(repos, logger)
 await guildSync.syncAll(clients.main.guilds.cache.map(guildInfo))
+const botSync = createBotSync(repos, logger)
+const [mainReady, ...subsReady] = [...readyClients.values()]
+if (!mainReady) throw new Error("the main bot is not ready")
+await botSync.syncAll(botIdentity(mainReady), subsReady.map(botIdentity))
 
 // 3. 読み上げを始める
 const configs = createGuildConfigStore(repos)
@@ -82,6 +87,7 @@ registerEvents({
   reader: createReader({ sessions, configs, state, logger, pickBot, channelName: (g, c) => nameOf(g, c) ?? "" }),
   sessions,
   guildSync,
+  botSync,
   logger,
 })
 

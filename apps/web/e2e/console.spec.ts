@@ -26,6 +26,45 @@ test("未ログインならログイン画面へ移動し、ログイン後は�
   expect(errors).toEqual([])
 })
 
+test.describe("ログイン画面", () => {
+  for (const [locale, heading, button] of [
+    ["ja-JP", /Discordの読み上げを\s*もっとカスタマイズ\s*可能に。/, "Discordでログイン"],
+    ["en-US", /Text-to-speech for Discord,\s*fully customizable\./, "Login with Discord"],
+  ] as const) {
+    test.describe(locale, () => {
+      test.use({ locale })
+
+      test(`キャッチコピー・ログインボタン・読み上げの見本が表示される（${locale}） @mobile`, async ({ page }) => {
+        const errors = trackErrors(page)
+        await page.goto("/login")
+        await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading)
+        await expect(page.getByRole("link", { name: button })).toBeVisible()
+        await expect(page.locator("figcaption")).toBeVisible()
+        expect(errors).toEqual([])
+      })
+    })
+  }
+})
+
+test("サーバーの概要で各 Bot の参加状況が分かり、いないサブボットを個別に招待できる @mobile", async ({ page }) => {
+  const errors = trackErrors(page)
+  await login(page, "/servers")
+  // サーバー一覧: サブボットが一部いない
+  await expect(page.getByText("1 / 2 参加中").first()).toBeVisible()
+
+  await page.goto("/servers/1122334455")
+  const bots = page.getByRole("list", { name: "Bot", exact: true }).getByRole("listitem")
+  await expect(bots).toHaveCount(3)
+  await expect(bots.filter({ hasText: "Voiloid 2" })).toContainText("参加中")
+  const invite = page.getByRole("link", { name: "Voiloid 3 をこのサーバーに招待" })
+  await expect(invite).toHaveAttribute("href", /client_id=900000000000000003&scope=bot&.*guild_id=1122334455/)
+  await expect(invite).toHaveAttribute("target", "_blank")
+  // メインの Bot とサブボットがすべている場合は招待ボタンを出さない
+  await page.goto("/servers/1029384756")
+  await expect(page.getByRole("link", { name: /をこのサーバーに招待/ })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
 test("主要なページがエラーなく表示される", async ({ page }) => {
   const errors = trackErrors(page)
   await login(page)
