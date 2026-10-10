@@ -11,6 +11,7 @@ import { EngineHealth, verifyWorkerSecret, WorkerStatus, WorkerType, type Reposi
 import { ENGINES } from "@voiloid/shared"
 import {
   parseWorkerToken,
+  WORKER_CAPABILITY,
   WORKER_CLOSE,
   WORKER_PROTOCOL_VERSION,
   workerMessageSchema,
@@ -20,7 +21,7 @@ import {
 import type { Logger } from "pino"
 import { WebSocketServer, type RawData, type WebSocket } from "ws"
 
-import { WorkerRegistry, type ConnectedWorker } from "./registry"
+import type { ConnectedWorker, WorkerRegistry } from "./registry"
 
 export const WORKER_PATH = "/worker"
 /** DB の lastSeenAt は書き込みを減らすため間引いて更新する */
@@ -144,9 +145,10 @@ export function createWorkerServer(options: WorkerServerOptions) {
           ownerUserId: auth.ownerUserId,
           socket,
           engines: new Map(msg.engines.map((e) => [e.engine, e])),
-          maxConcurrency: WorkerRegistry.effectiveConcurrency(msg.maxConcurrency, auth.concurrencyLimit),
+          maxConcurrency: msg.maxConcurrency,
           reportedConcurrency: msg.maxConcurrency,
           concurrencyLimit: auth.concurrencyLimit,
+          configurable: msg.capabilities?.includes(WORKER_CAPABILITY.configure) === true,
           version: msg.workerVersion,
           pending: new Map(),
           failures: 0,
@@ -177,6 +179,8 @@ export function createWorkerServer(options: WorkerServerOptions) {
           name: auth.name,
           heartbeatIntervalMs: options.heartbeatIntervalMs,
         })
+        // Web で設定した同時処理の数を反映する（configure に対応した Worker には数を伝える）
+        registry.applyConcurrency(worker)
         logger.info(
           { worker: auth.publicId, remote, engines: msg.engines.map((e) => e.engine), version: msg.workerVersion },
           "worker connected",

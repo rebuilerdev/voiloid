@@ -66,6 +66,7 @@ export class FakeDiscord implements DiscordApi {
   codes = new Map<string, string>()
   memberUpdates: { guildId: string; body: ModifyCurrentMember }[] = []
   failNextMemberUpdate: DiscordHttpError | null = null
+  failNextUserGuilds: DiscordHttpError | null = null
   refreshFails = false
   calls = { userGuilds: 0, channels: 0, refresh: 0, revoke: 0 }
 
@@ -103,6 +104,11 @@ export class FakeDiscord implements DiscordApi {
 
   getCurrentUserGuilds(accessToken: string) {
     this.calls.userGuilds++
+    if (this.failNextUserGuilds) {
+      const error = this.failNextUserGuilds
+      this.failNextUserGuilds = null
+      return Promise.reject(error)
+    }
     const guilds = this.userGuilds.get(accessToken)
     return guilds ? Promise.resolve(guilds) : Promise.reject(new DiscordHttpError(401))
   }

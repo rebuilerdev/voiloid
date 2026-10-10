@@ -54,11 +54,11 @@ export function toApiWorker(worker: WorkerRecord, live: WorkerLive | undefined):
       version: e.engineVersion ?? undefined,
     })),
     runningJobs: live?.runningJobs ?? 0,
-    maxConcurrency:
-      live?.maxConcurrency ??
-      (worker.concurrencyLimit ? Math.min(worker.maxConcurrency, worker.concurrencyLimit) : worker.maxConcurrency),
+    // 接続していないときは、Web で設定した数（無ければ Worker の申告）を表示する
+    maxConcurrency: live?.maxConcurrency ?? worker.concurrencyLimit ?? worker.maxConcurrency,
     workerConcurrency: worker.maxConcurrency,
     concurrencyLimit: worker.concurrencyLimit ?? undefined,
+    concurrencyConfigurable: live?.configurable,
     latency: live?.latencyMs,
     lastSeenAt: live?.lastSeenAt ?? worker.lastSeenAt?.toISOString(),
     queue: live?.queue ?? 0,

@@ -114,6 +114,8 @@ describe("createWorkerClient", () => {
         // 起動していないエンジンは異常として申告する
         { engine: "AivisSpeech", healthy: false, speakers: [] },
       ],
+      // 同時処理の数を Gateway から変えられることを申告する
+      capabilities: ["configure"],
     })
     expect(c.connected).toBe(false)
     gateway.send({ type: "welcome", workerId: "w", name: "n", heartbeatIntervalMs: 1000 })
@@ -169,6 +171,28 @@ describe("createWorkerClient", () => {
     )
   })
 
+  it("configure で同時処理の数を変える（MAX_CONCURRENCY より大きくできる）", async () => {
+    gateway = await startFakeGateway()
+    const releases: (() => void)[] = []
+    const blocking = adapter({
+      synthesize: () => new Promise<Buffer>((resolve) => releases.push(() => resolve(Buffer.from("wav")))),
+    })
+    start([blocking], { maxConcurrency: 1 })
+    await until(() => gateway!.messages.length === 1)
+    gateway.send({ type: "welcome", workerId: "w", name: "n", heartbeatIntervalMs: 1000 })
+    gateway.send({ type: "configure", maxConcurrency: 3 })
+    const ids = [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "33333333-3333-4333-8333-333333333333",
+    ]
+    for (const jobId of ids) gateway.send(job({ jobId }))
+    // MAX_CONCURRENCY = 1 でも、3 件を同時に処理する
+    await until(() => releases.length === 3)
+    for (const release of releases) release()
+    await until(() => gateway!.messages.filter((m) => m.type === "result").length === 3)
+  })
+
   it("切断されたら再接続する", async () => {
     gateway = await startFakeGateway()
     start([adapter()])
@@ -222,6 +246,28 @@ describe("createLimiter", () => {
     releases[1]!()
     releases[2]!()
     await Promise.all(runs)
+    expect(limiter.running).toBe(0)
+  })
+
+  it("同時実行数を変えると、増やした分だけ待っているジョブを始め、減らした後は新しいジョブを待たせる", async () => {
+    const limiter = createLimiter(1)
+    const releases: (() => void)[] = []
+    const task = () => new Promise<void>((resolve) => releases.push(resolve))
+    const runs = [limiter.run(task), limiter.run(task), limiter.run(task)]
+    await until(() => releases.length === 1)
+    limiter.setConcurrency(3)
+    await until(() => releases.length === 3)
+    expect(limiter.running).toBe(3)
+    limiter.setConcurrency(1)
+    const fourth = limiter.run(task)
+    for (const release of releases.splice(0, 2)) release()
+    await new Promise((r) => setTimeout(r, 20))
+    // まだ 1 件実行中なので、4 件目は待つ
+    expect(limiter.waiting).toBe(1)
+    releases.shift()?.()
+    await until(() => releases.length === 1)
+    releases.shift()?.()
+    await Promise.all([...runs, fourth])
     expect(limiter.running).toBe(0)
   })
 

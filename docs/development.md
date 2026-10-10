@@ -58,7 +58,7 @@ sequenceDiagram
    - 公式Worker は、担当するサーバーが指定されていれば、そのサーバーだけで使う
 2. 声を決める: 投稿者のマイボイス（そのエンジンを持つ Worker があり、サーバーでオフにされていない場合）→ サーバーのデフォルト音声
 3. 同じグループの中では、失敗の少ない・空いている Worker から試し、失敗したら次へ
-4. Worker ごとの同時処理の数は min(Worker の申告 `MAX_CONCURRENCY`, Web で設定した上限)。超えた依頼は Gateway で順番待ちにし、ジョブのタイムアウトまでに空かなければ次の Worker を試す
+4. Worker ごとの同時処理の数は、Web で設定した数（無ければ Worker の申告 `MAX_CONCURRENCY`）。hello で `capabilities: ["configure"]` を申告した Worker には、Gateway が `configure` で数を伝える。申告しない古い Worker は min(申告, Web の値)。超えた依頼は Gateway で順番待ちにし、ジョブのタイムアウトまでに空かなければ次の Worker を試す
 
 ### 設定の変更の伝わり方
 

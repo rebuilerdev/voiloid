@@ -167,7 +167,7 @@ describe("接続・hello", () => {
     await until(async () => (await synthesize(guild.discordGuildId, null)).status === 200)
   })
 
-  it("同時処理の上限: Worker の申告より小さい上限を守り、超えた依頼は順番待ちにする。上限の変更は切断せずに反映する", async () => {
+  it("古い Worker（configure 非対応）: Worker の申告より小さい数を守り、超えた依頼は順番待ちにする。変更は切断せずに反映する", async () => {
     const guild = await createTestGuild(h.db)
     const { worker, token } = await registerTestWorker(h.db)
     await h.db.worker.update({ where: { id: worker.id }, data: { concurrencyLimit: 1 } })
@@ -190,6 +190,25 @@ describe("接続・hello", () => {
     await notify(worker.publicId)
     await until(() => w.jobs.length === 2)
     expect(live()).toMatchObject({ maxConcurrency: 4, concurrencyLimit: null })
+  })
+
+  it("configure に対応した Worker は、Web で設定した数を Worker の申告より大きくでき、Worker に伝える", async () => {
+    const { worker, token } = await registerTestWorker(h.db)
+    await h.db.worker.update({ where: { id: worker.id }, data: { concurrencyLimit: 8 } })
+    const w = fake(token, [voicevox], "configurable", 2)
+    await w.connect({ capabilities: ["configure"] })
+    const live = () => h.gateway.registry.get(worker.id)
+    await until(() => w.configured.length === 1)
+    expect(w.configured).toEqual([8])
+    expect(live()).toMatchObject({ maxConcurrency: 8, reportedConcurrency: 2, configurable: true })
+    expect(h.gateway.registry.liveState(live()!)).toMatchObject({ maxConcurrency: 8, configurable: true })
+
+    // 設定を外すと、Worker の申告（2）に戻すよう伝える
+    await h.db.worker.update({ where: { id: worker.id }, data: { concurrencyLimit: null } })
+    await notify(worker.publicId)
+    await until(() => w.configured.length === 2)
+    expect(w.configured).toEqual([8, 2])
+    expect(live()).toMatchObject({ maxConcurrency: 2 })
   })
 
   it("運営者の「切断」は、すぐに再接続してよいコードで切断する", async () => {

@@ -385,3 +385,26 @@ Worker の同時処理の数は、今は Worker の環境変数 `MAX_CONCURRENCY
 - [x] API: 運営者（`PATCH /api/admin/workers/:id`、editor 以上）と所有者（`PATCH /api/workers/:id`）が設定できる。監査ログに残す。Worker の申告値（`workerConcurrency`）と上限（`concurrencyLimit`）を返す
 - [x] Web: 運営コンソールの Worker の詳細と、自鯖Worker の詳細に「同時処理の上限」。モック・ja / en・E2E
 - [x] テスト（Gateway の順番待ち・上限の反映、API）、docs
+
+---
+
+# 「ダッシュボードの読み込みに失敗しました」の修正（2026-10-10）
+
+原因: ダッシュボードはサーバー一覧と利用状況を同時に読み込み、どちらも Discord の「参加しているサーバーの一覧」を取得する。キャッシュ（60 秒）が無いと同時に Discord を呼び、Discord のレート制限（429）でエラーになる（ログイン直後・キャッシュが切れた直後）。
+同じ形で、アクセストークンの更新が同時に 2 回走ると、2 回目が失敗してログアウトされるおそれがある。
+
+- [x] api: 同じユーザーのサーバー一覧の取得・同じセッションのトークン更新を、同時に 1 回だけにする（実行中なら結果を待って共有する）
+- [x] api: サーバー一覧の取得が 429 のときは、直近（10 分以内）に取得した一覧を使う
+- [x] 統合テスト（同時の取得が 1 回になる・429 で直近の一覧を使う・トークン更新が 1 回になる）
+
+---
+
+# 同時処理の数を Worker の設定より大きくできるようにする（2026-10-10）
+
+今は Worker 自身が `MAX_CONCURRENCY` を超えた依頼を順番待ちにするため、Web の上限は「小さくする」ことしかできない。Gateway から Worker の同時処理の数を変えられるようにする。
+
+- [x] shared: hello に `capabilities`（`configure` = 同時処理の数を変えられる）、Gateway → Worker の `configure`（maxConcurrency）、リアルタイム状態に `configurable`
+- [x] worker: `configure` を受けたら同時処理の数を変える。hello で `configure` を申告する
+- [x] gateway: 変えられる Worker は「Web の値（無ければ Worker の申告）」、古い Worker は「min(申告, Web の値)」。変えられる Worker には接続時・変更時に `configure` を送る
+- [x] api / web: 「同時処理の数」として表示・設定する。古い Worker には「大きくするには Worker を更新」と案内する。モック・ja / en・E2E
+- [x] テスト（worker・gateway）、docs。プロトコルのバージョンは上げない（古い Worker もそのまま接続できる）

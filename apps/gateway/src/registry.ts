@@ -40,12 +40,14 @@ export interface ConnectedWorker {
   ownerUserId: string | null
   socket: WebSocket
   engines: Map<string, EngineReport>
-  /** 実際に使う同時処理の数 = min(Worker の申告, Web で設定した上限) */
+  /** 実際に使う同時処理の数（effectiveConcurrency を参照） */
   maxConcurrency: number
   /** Worker が申告した同時処理の数（Worker の MAX_CONCURRENCY） */
   reportedConcurrency?: number
-  /** Web で設定した同時処理の上限（null / undefined = 上限なし） */
+  /** Web で設定した同時処理の数（null / undefined = Worker の申告を使う） */
   concurrencyLimit?: number | null
+  /** Worker が configure（同時処理の数の変更）に対応している */
+  configurable?: boolean
   /** 上限に達したときの順番待ち */
   waiting?: WaitingJob[]
   version: string
@@ -121,20 +123,32 @@ export class WorkerRegistry {
       .map((e) => e.engine)
   }
 
-  /** 実際に使う同時処理の数 = min(Worker の申告, Web で設定した上限) */
-  static effectiveConcurrency(reported: number, limit: number | null | undefined): number {
-    return limit ? Math.min(reported, limit) : reported
+  /**
+   * 実際に使う同時処理の数。
+   * - configure に対応した Worker: Web で設定した数（無ければ Worker の申告）。申告より大きくもできる
+   * - 古い Worker: Worker 自身が申告を超えた分を待たせるため、min(申告, Web で設定した数)
+   */
+  static effectiveConcurrency(reported: number, limit: number | null | undefined, configurable = false): number {
+    if (!limit) return reported
+    return configurable ? limit : Math.min(reported, limit)
   }
 
-  /** 上限を変えたとき: 実際に使う数を更新し、空いた分だけ順番待ちを送る */
-  setConcurrencyLimit(worker: ConnectedWorker, limit: number | null): void {
-    worker.concurrencyLimit = limit
-    worker.maxConcurrency = WorkerRegistry.effectiveConcurrency(
-      worker.reportedConcurrency ?? worker.maxConcurrency,
-      limit,
-    )
+  /** 実際に使う数を決め、configure に対応した Worker にはその数を伝える */
+  applyConcurrency(worker: ConnectedWorker): void {
+    const reported = worker.reportedConcurrency ?? worker.maxConcurrency
+    worker.maxConcurrency = WorkerRegistry.effectiveConcurrency(reported, worker.concurrencyLimit, worker.configurable)
+    if (worker.configurable) {
+      worker.socket.send(JSON.stringify({ type: "configure", maxConcurrency: worker.maxConcurrency }))
+    }
     this.next(worker)
     void this.publishLive(worker)
+  }
+
+  /** Web で設定した数が変わったとき（Worker は切断しない） */
+  setConcurrencyLimit(worker: ConnectedWorker, limit: number | null): void {
+    if (limit === (worker.concurrencyLimit ?? null)) return
+    worker.concurrencyLimit = limit
+    this.applyConcurrency(worker)
   }
 
   /** 負荷（送ったジョブ + 順番待ち）/ 同時実行数。小さいほど空いている */
@@ -245,6 +259,7 @@ export class WorkerRegistry {
       // 上限を下げた直後は、送り済みのジョブが上限を超えていることがある
       queue: Math.max(0, worker.pending.size - worker.maxConcurrency) + (worker.waiting?.length ?? 0),
       maxConcurrency: worker.maxConcurrency,
+      configurable: worker.configurable === true,
       latencyMs: worker.latencyMs,
       lastSeenAt: worker.lastSeenAt.toISOString(),
     }

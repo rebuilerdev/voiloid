@@ -224,6 +224,18 @@ describe("認証・CSRF", () => {
     expect(h.discord.calls.refresh).toBe(1)
   })
 
+  it("期限切れのトークンで同時にリクエストが来ても、更新は 1 回だけで、ログアウトされない", async () => {
+    const guildId = "400000000000000002"
+    const user = await login(h, [{ id: guildId }], { accessTokenExpiresAt: Date.now() - 1000 })
+    const responses = await Promise.all([
+      call(h, "GET", "/api/guilds", { user }),
+      call(h, "GET", "/api/usage?period=month", { user }),
+    ])
+    expect(responses.map((r) => r.statusCode)).toEqual([200, 200])
+    expect(h.discord.calls.refresh).toBe(1)
+    expect((await call(h, "GET", "/api/me", { user })).statusCode).toBe(200)
+  })
+
   it("トークンを更新できなければセッションを破棄して 401", async () => {
     const user = await login(h, [], { accessTokenExpiresAt: Date.now() - 1000 })
     h.discord.refreshFails = true

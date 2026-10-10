@@ -117,6 +117,8 @@ type Behavior = (job: SynthesizeJob) => { ok: true; audio: Buffer } | { ok: fals
 export class FakeWorker {
   socket: WebSocket | undefined
   jobs: SynthesizeJob[] = []
+  /** Gateway から届いた configure（同時処理の数） */
+  configured: number[] = []
   closeCode: number | undefined
   behavior: Behavior = () => ({ ok: true, audio: Buffer.from(`audio:${this.name}`) })
 
@@ -129,7 +131,9 @@ export class FakeWorker {
   ) {}
 
   /** 接続し、hello を送って welcome を待つ */
-  async connect(options: { hello?: unknown; protocolVersion?: number } = {}): Promise<unknown> {
+  async connect(
+    options: { hello?: unknown; protocolVersion?: number; capabilities?: string[] } = {},
+  ): Promise<unknown> {
     const socket = new WebSocket(this.url, { headers: { Authorization: `Bearer ${this.token}` } })
     this.socket = socket
     socket.on("close", (code) => (this.closeCode = code))
@@ -143,6 +147,10 @@ export class FakeWorker {
     })
     socket.on("message", (data: Buffer) => {
       const message = gatewayMessageSchema.safeParse(JSON.parse(data.toString()))
+      if (message.success && message.data.type === "configure") {
+        this.configured.push(message.data.maxConcurrency)
+        return
+      }
       if (!message.success || message.data.type !== "synthesize") return
       const job = message.data
       this.jobs.push(job)
@@ -164,6 +172,7 @@ export class FakeWorker {
           workerVersion: "1.2.3",
           maxConcurrency: this.maxConcurrency,
           engines: this.engines,
+          ...(options.capabilities ? { capabilities: options.capabilities } : {}),
         },
       ),
     )

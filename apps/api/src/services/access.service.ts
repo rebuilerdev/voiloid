@@ -14,6 +14,8 @@ import type { Session } from "../lib/session"
 import type { OperatorService } from "./operator.service"
 
 const GUILDS_CACHE_SECONDS = 60
+/** Discord のレート制限（429）のときに使う、直近のサーバー一覧の保持期間 */
+const GUILDS_STALE_SECONDS = 600
 /** 失効の少し前に更新する */
 const REFRESH_MARGIN_MS = 60_000
 
@@ -36,19 +38,43 @@ export interface AccessibleGuild {
   asOperator?: boolean
 }
 
+type RefreshedTokens = Pick<Session, "accessToken" | "refreshToken" | "accessTokenExpiresAt">
+
 export function createAccessService(deps: AppDeps, operators: OperatorService) {
+  /**
+   * 実行中の Discord への問い合わせ。同じ問い合わせが同時に来たら、1 回だけ実行して結果を共有する
+   * （ページは複数の API を同時に呼ぶため。Discord のレート制限と、トークンの二重更新を防ぐ）
+   */
+  const refreshing = new Map<string, Promise<RefreshedTokens>>()
+  const fetchingGuilds = new Map<string, Promise<DiscordPartialGuild[]>>()
+
+  function once<T>(inflight: Map<string, Promise<T>>, key: string, run: () => Promise<T>): Promise<T> {
+    const running = inflight.get(key)
+    if (running) return running
+    const promise = run().finally(() => inflight.delete(key))
+    inflight.set(key, promise)
+    return promise
+  }
+
   /** 期限が近ければ Discord のアクセストークンを更新する。更新できなければ再ログインが必要 */
   async function accessToken(session: Session): Promise<string> {
     if (session.accessTokenExpiresAt - REFRESH_MARGIN_MS > deps.now().getTime()) return session.accessToken
+    // 同じセッションの更新が同時に走ると、2 回目は使用済みの refresh token で失敗してログアウトになるため 1 回にまとめる
+    // 同時に来た別のリクエストのセッションにも、更新後のトークンをすべて反映する（古い refresh token を保存し直さない）
+    Object.assign(session, await once(refreshing, session.id, () => refreshAccessToken(session)))
+    return session.accessToken
+  }
+
+  async function refreshAccessToken(session: Session): Promise<RefreshedTokens> {
     try {
       const tokens = await deps.discord.refreshTokens(session.refreshToken)
-      Object.assign(session, {
+      const refreshed = {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         accessTokenExpiresAt: tokens.expiresAt,
-      })
-      await deps.sessions.update(session)
-      return session.accessToken
+      }
+      await deps.sessions.update({ ...session, ...refreshed })
+      return refreshed
     } catch (error) {
       if (error instanceof DiscordHttpError && error.status >= 400 && error.status < 500 && error.status !== 429) {
         await deps.sessions.destroy(session.id)
@@ -58,14 +84,23 @@ export function createAccessService(deps: AppDeps, operators: OperatorService) {
     }
   }
 
-  /** ユーザーが参加している Discord サーバー（キャッシュ付き） */
+  async function readGuilds(key: string): Promise<DiscordPartialGuild[] | null> {
+    const cached = await deps.redis.get(key)
+    if (!cached) return null
+    const parsed = cachedGuildsSchema.safeParse(JSON.parse(cached))
+    return parsed.success ? parsed.data : null
+  }
+
+  /** ユーザーが参加している Discord サーバー（キャッシュ付き。同時の取得は 1 回にまとめる） */
   async function discordGuilds(session: Session): Promise<DiscordPartialGuild[]> {
     const key = redisKeys.userGuilds(session.discordUserId)
-    const cached = await deps.redis.get(key)
-    if (cached) {
-      const parsed = cachedGuildsSchema.safeParse(JSON.parse(cached))
-      if (parsed.success) return parsed.data
-    }
+    const cached = await readGuilds(key)
+    if (cached) return cached
+    return once(fetchingGuilds, session.discordUserId, () => fetchGuilds(session, key))
+  }
+
+  async function fetchGuilds(session: Session, key: string): Promise<DiscordPartialGuild[]> {
+    const staleKey = redisKeys.userGuildsStale(session.discordUserId)
     let guilds: DiscordPartialGuild[]
     try {
       guilds = await deps.discord.getCurrentUserGuilds(await accessToken(session))
@@ -75,9 +110,16 @@ export function createAccessService(deps: AppDeps, operators: OperatorService) {
         await deps.sessions.destroy(session.id)
         throw new AppError("UNAUTHORIZED", "Please log in again.")
       }
+      // レート制限なら、直近に取得した一覧で表示を続ける
+      if (error instanceof DiscordHttpError && error.status === 429) {
+        const stale = await readGuilds(staleKey)
+        if (stale) return stale
+      }
       throw toAppError(error)
     }
-    await deps.redis.set(key, JSON.stringify(guilds), "EX", GUILDS_CACHE_SECONDS)
+    const json = JSON.stringify(guilds)
+    await deps.redis.set(key, json, "EX", GUILDS_CACHE_SECONDS)
+    await deps.redis.set(staleKey, json, "EX", GUILDS_STALE_SECONDS)
     return guilds
   }
 

@@ -2,6 +2,7 @@ import { createTestUser, createTestWorker, snowflake } from "@voiloid/database/t
 import { redisKeys } from "@voiloid/shared/protocol"
 import { afterAll, beforeEach, describe, expect, it } from "vitest"
 
+import { DiscordHttpError } from "../lib/discord"
 import { call, createHarness, installGuild, login, NO_PERMISSIONS, type Harness } from "../../test/harness"
 
 const { setup, teardown } = createHarness()
@@ -45,6 +46,34 @@ describe("権限（Owner / Administrator / Manage Guild）", () => {
     const user = await login(h, [])
     expect((await call(h, "GET", `/api/guilds/${guild.discordGuildId}`, { user })).errorCode()).toBe("NOT_FOUND")
     expect((await call(h, "GET", "/api/guilds/not-a-snowflake", { user })).statusCode).toBe(404)
+  })
+
+  it("同時に来たリクエストでも、Discord のサーバー一覧の取得は 1 回にまとめる（ダッシュボードの同時読み込み）", async () => {
+    const guild = await installGuild(h)
+    const user = await login(h, [{ id: guild.discordGuildId }])
+    const responses = await Promise.all([
+      call(h, "GET", "/api/guilds", { user }),
+      call(h, "GET", "/api/usage?period=month", { user }),
+      call(h, "GET", `/api/guilds/${guild.discordGuildId}`, { user }),
+    ])
+    expect(responses.map((r) => r.statusCode)).toEqual([200, 200, 200])
+    expect(h.discord.calls.userGuilds).toBe(1)
+  })
+
+  it("Discord のレート制限（429）のときは、直近に取得したサーバー一覧を使う。直近の一覧が無ければ 429", async () => {
+    const guild = await installGuild(h)
+    const user = await login(h, [{ id: guild.discordGuildId }])
+    expect((await call(h, "GET", "/api/guilds", { user })).statusCode).toBe(200)
+    // キャッシュ（60 秒）が切れた状態にする
+    await h.redis.del(redisKeys.userGuilds(user.discordUserId))
+    h.discord.failNextUserGuilds = new DiscordHttpError(429, 1)
+    const res = await call(h, "GET", "/api/guilds", { user })
+    expect(res.statusCode).toBe(200)
+    expect((res.data() as { id: string }[]).map((g) => g.id)).toEqual([guild.discordGuildId])
+
+    const other = await login(h, [{ id: guild.discordGuildId }])
+    h.discord.failNextUserGuilds = new DiscordHttpError(429, 1)
+    expect((await call(h, "GET", "/api/guilds", { user: other })).statusCode).toBe(429)
   })
 
   it("ユーザーのサーバー一覧は短時間キャッシュし、Discord を毎回呼ばない", async () => {

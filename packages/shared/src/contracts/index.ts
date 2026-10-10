@@ -275,12 +275,14 @@ export interface Worker {
   status: WorkerStatus
   engines: WorkerEngine[]
   runningJobs: number
-  /** 実際に使う同時処理の数 = min(Worker の申告, 上限) */
+  /** 実際に使う同時処理の数 */
   maxConcurrency: number
   /** Worker が申告した同時処理の数（Worker の MAX_CONCURRENCY） */
   workerConcurrency?: number
-  /** Web で設定した同時処理の上限（無ければ上限なし） */
+  /** Web で設定した同時処理の数（無ければ Worker の申告を使う） */
   concurrencyLimit?: number
+  /** 接続中の Worker が、Web の設定で同時処理の数を増やせる（false = 古い Worker のため減らすことしかできない） */
+  concurrencyConfigurable?: boolean
   latency?: number
   lastSeenAt?: string
   queue?: number
@@ -303,7 +305,7 @@ export interface CreateWorkerResponse {
   token: string
 }
 
-/** 同時処理の上限（null = 上限なし） */
+/** Web で設定する同時処理の数（null = Worker の申告を使う） */
 export const concurrencyLimitSchema = z
   .number()
   .int()

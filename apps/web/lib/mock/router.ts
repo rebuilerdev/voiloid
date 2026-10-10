@@ -209,7 +209,7 @@ function toWorker(w: MockWorker): Worker {
   // Online の Worker は「数秒前」に通信したことにする
   const secondsAgo = isUp(w) ? Math.floor(Math.random() * 5) + 1 : w.lastSeenSecondsAgo
   const jitter = isUp(w) ? Math.round((Math.random() - 0.5) * 4) : 0
-  const max = w.concurrencyLimit ? Math.min(w.maxConcurrency, w.concurrencyLimit) : w.maxConcurrency
+  const max = w.concurrencyLimit ?? w.maxConcurrency
   return {
     id: w.id,
     name: w.name,
@@ -220,6 +220,7 @@ function toWorker(w: MockWorker): Worker {
     maxConcurrency: max,
     workerConcurrency: w.maxConcurrency,
     concurrencyLimit: w.concurrencyLimit,
+    concurrencyConfigurable: isUp(w) ? true : undefined,
     latency: w.latency !== undefined ? w.latency + jitter : undefined,
     lastSeenAt: new Date(Date.now() - secondsAgo * 1000).toISOString(),
     queue: w.queue,

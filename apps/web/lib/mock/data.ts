@@ -43,7 +43,7 @@ export type MockWorker = {
   disabledEngines?: string[]
   /** 公式Worker のみ: 接続先（connections）に指定したサーバーだけを担当する */
   restricted?: boolean
-  /** Web で設定した同時処理の上限（無ければ上限なし。maxConcurrency は Worker の申告） */
+  /** Web で設定した同時処理の数（無ければ Worker の申告。maxConcurrency は Worker の申告） */
   concurrencyLimit?: number
 }
 

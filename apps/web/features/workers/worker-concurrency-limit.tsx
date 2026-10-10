@@ -18,8 +18,8 @@ const parseLimit = (value: string): number | null | "invalid" => {
 }
 
 /**
- * 同時処理の上限（運営者・自鯖Worker の所有者）。
- * 実際に使う数は min(Worker の申告, 上限)。上限を超えた依頼は Gateway で順番待ちになる。
+ * 同時処理の数（運営者・自鯖Worker の所有者）。空なら Worker の申告（MAX_CONCURRENCY）を使う。
+ * 新しい Worker は Gateway から数を変えられる。古い Worker は申告より大きくできない。超えた依頼は Gateway で順番待ちになる。
  */
 export function WorkerConcurrencyLimit<W extends Worker>({
   worker,
@@ -64,6 +64,11 @@ export function WorkerConcurrencyLimit<W extends Worker>({
       {worker.workerConcurrency !== undefined && (
         <p className="text-muted-foreground tabular-nums">
           {fmt(d.concurrencyWorker, { count: String(worker.workerConcurrency) })}
+        </p>
+      )}
+      {worker.concurrencyConfigurable === false && worker.workerConcurrency !== undefined && (
+        <p role="status" className="text-warning">
+          {fmt(d.concurrencyOutdated, { count: String(worker.workerConcurrency) })}
         </p>
       )}
       {canEdit ? (

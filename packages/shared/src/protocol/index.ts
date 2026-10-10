@@ -46,12 +46,19 @@ export type EngineReport = z.infer<typeof engineReportSchema>
 
 /* ---------- Worker → Gateway ---------- */
 
+/** Worker ができること（hello で申告する。古い Worker は申告しない） */
+export const WORKER_CAPABILITY = {
+  /** Gateway からの configure で、同時処理の数を変えられる */
+  configure: "configure",
+} as const
+
 export const workerHelloSchema = z.object({
   type: z.literal("hello"),
   protocolVersion: z.number().int(),
   workerVersion: z.string().max(64),
   maxConcurrency: z.number().int().min(1).max(64),
   engines: z.array(engineReportSchema).max(16),
+  capabilities: z.array(z.string().max(32)).max(16).optional(),
 })
 
 export const workerEnginesSchema = z.object({
@@ -104,6 +111,8 @@ export const gatewayMessageSchema = z.discriminatedUnion("type", [
   }),
   synthesizeJobSchema,
   z.object({ type: z.literal("refresh") }),
+  /** 同時処理の数を変える（capabilities に configure を申告した Worker にだけ送る） */
+  z.object({ type: z.literal("configure"), maxConcurrency: z.number().int().min(1).max(64) }),
 ])
 
 export type SynthesizeJob = z.infer<typeof synthesizeJobSchema>
@@ -169,6 +178,8 @@ export const redisKeys = {
   oauthState: (state: string) => `${PREFIX}:oauth-state:${state}`,
   /** ユーザーの Discord ギルド一覧のキャッシュ */
   userGuilds: (discordUserId: string) => `${PREFIX}:user-guilds:${discordUserId}`,
+  /** 直近に取得したサーバー一覧（Discord のレート制限のときに使う予備） */
+  userGuildsStale: (discordUserId: string) => `${PREFIX}:user-guilds-stale:${discordUserId}`,
   /** サーバーのチャンネル一覧のキャッシュ */
   guildChannels: (discordGuildId: string) => `${PREFIX}:guild-channels:${discordGuildId}`,
   /** Worker のリアルタイム状態（Gateway が更新） */
@@ -195,6 +206,8 @@ export const workerLiveSchema = z.object({
   runningJobs: z.number().int().nonnegative(),
   queue: z.number().int().nonnegative(),
   maxConcurrency: z.number().int().positive(),
+  /** 同時処理の数を Web から変えられる（Worker が configure に対応している） */
+  configurable: z.boolean().optional(),
   latencyMs: z.number().nonnegative().optional(),
   lastSeenAt: z.iso.datetime(),
 })

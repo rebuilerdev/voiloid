@@ -7,6 +7,7 @@
 import {
   gatewayMessageSchema,
   WORKER_CLOSE,
+  WORKER_CAPABILITY,
   WORKER_PROTOCOL_VERSION,
   type EngineReport,
   type SynthesizeJob,
@@ -34,19 +35,31 @@ const DEFAULT_BACKOFF = { initialMs: 1_000, maxMs: 30_000, rejectedMs: 60_000 }
 const rawText = (data: RawData) =>
   (Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data as ArrayBuffer)).toString("utf8")
 
-/** 同時実行数の制限 */
+/** 同時実行数の制限（実行中に変えられる） */
 export function createLimiter(concurrency: number) {
   let running = 0
   const queue: (() => void)[] = []
-  return {
-    async run<T>(task: () => Promise<T>): Promise<T> {
-      if (running >= concurrency) await new Promise<void>((resolve) => queue.push(resolve))
+  /** 空きがあれば、待っているタスクに枠を割り当てて始める（枠は割り当てる側で数える） */
+  const drain = () => {
+    while (running < concurrency && queue.length > 0) {
       running++
+      queue.shift()?.()
+    }
+  }
+  return {
+    /** 同時実行数を変える。増やした分だけ、待っているタスクをすぐに始める */
+    setConcurrency(next: number) {
+      concurrency = next
+      drain()
+    },
+    async run<T>(task: () => Promise<T>): Promise<T> {
+      if (running < concurrency && queue.length === 0) running++
+      else await new Promise<void>((resolve) => queue.push(resolve))
       try {
         return await task()
       } finally {
         running--
-        queue.shift()?.()
+        drain()
       }
     },
     get running() {
@@ -154,6 +167,7 @@ export function createWorkerClient(options: WorkerClientOptions) {
           workerVersion: options.version,
           maxConcurrency: options.maxConcurrency,
           engines,
+          capabilities: [WORKER_CAPABILITY.configure],
         })
       })
     })
@@ -178,6 +192,11 @@ export function createWorkerClient(options: WorkerClientOptions) {
           return
         case "refresh":
           void collectReports().then((engines) => send({ type: "engines", engines }))
+          return
+        case "configure":
+          // Web で設定した同時処理の数（MAX_CONCURRENCY より大きくも小さくもできる）
+          limiter.setConcurrency(message.maxConcurrency)
+          logger.info({ maxConcurrency: message.maxConcurrency }, "concurrency updated by the gateway")
           return
       }
     })
