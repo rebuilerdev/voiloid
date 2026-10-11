@@ -29,7 +29,26 @@
 		respond 404
 	}
 
-	# Web GUI
+	# Web GUI（ページを開いたとき）。
+	# 古いログイン情報などで 403 が返ったら、エラー画面で止めずに、
+	# Cookie を消してログイン画面へ戻す（/api/auth/session-expired が Cookie を消して /login へ転送する）。
+	# /login 自体の 403 は、転送を繰り返さないよう、そのまま返す
+	@page {
+		method GET
+		not path /login /login/*
+		expression `header({'Sec-Fetch-Dest': 'document'}) || header({'Accept': '*text/html*'})`
+	}
+	handle @page {
+		reverse_proxy web:3000 {
+			@forbidden status 403
+			handle_response @forbidden {
+				header Location /api/auth/session-expired?next={http.request.uri.path}
+				respond 302
+			}
+		}
+	}
+
+	# Web GUI（ページ以外: JavaScript・画像・データの取得など）
 	handle {
 		reverse_proxy web:3000
 	}
