@@ -147,7 +147,13 @@ export function AppSidebar({ userSlot, operatorSlot }: { userSlot: React.ReactNo
             <SidebarMenuButton size="lg" render={<GuardedLink href="/dashboard" />}>
               <AppLogo className="size-8" />
               <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-sm font-semibold">{t.common.appName}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-sm font-semibold">{t.common.appName}</span>
+                  {/* 正式公開まではベータ版であることを示す */}
+                  <span className="shrink-0 rounded-full border border-current px-1.5 py-px font-mono text-[9px] leading-none tracking-[0.12em] text-muted-foreground">
+                    BETA
+                  </span>
+                </span>
                 <span className="truncate text-xs text-muted-foreground">{t.common.appTagline}</span>
               </div>
             </SidebarMenuButton>
