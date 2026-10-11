@@ -39,7 +39,8 @@ test.describe("ログイン画面", () => {
         await page.goto("/login")
         await expect(page.getByRole("heading", { level: 1 })).toHaveText(heading)
         await expect(page.getByRole("link", { name: button })).toBeVisible()
-        await expect(page.locator("figcaption")).toBeVisible()
+        // 見本はギミック（キャンバス）で見せ、説明文は読み上げソフト向けに置いている
+        await expect(page.locator("figcaption")).toBeAttached()
         expect(errors).toEqual([])
       })
     })

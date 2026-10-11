@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { Geist_Mono, IBM_Plex_Sans, IBM_Plex_Sans_JP } from "next/font/google"
+import { Geist_Mono, IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Sans_JP } from "next/font/google"
 
 import "@/app/globals.css"
 // Server Component からの API 呼び出し（Cookie 転送・モック）を登録する
@@ -19,6 +19,13 @@ const ibmPlexSansJp = IBM_Plex_Sans_JP({
   variable: "--font-plex-jp",
 })
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" })
+// ログイン画面だけで使う（rebuiler.dev と同じ等幅フォント）
+const ibmPlexMono = IBM_Plex_Mono({
+  weight: ["400", "500"],
+  subsets: ["latin"],
+  preload: false,
+  variable: "--font-plex-mono",
+})
 
 export async function generateStaticParams() {
   return locales.map((lang) => ({ lang }))
@@ -40,7 +47,7 @@ export default async function RootLayout({ children }: LayoutProps<"/[lang]">) {
       lang={locale}
       // next-themes が class を付け替えるため
       suppressHydrationWarning
-      className={cn("h-full antialiased font-sans", ibmPlexSans.variable, ibmPlexSansJp.variable, geistMono.variable)}
+      className={cn("h-full antialiased font-sans", ibmPlexSans.variable, ibmPlexSansJp.variable, geistMono.variable, ibmPlexMono.variable)}
     >
       <body className="flex min-h-full flex-col">
         <Providers locale={locale} dictionary={t}>
