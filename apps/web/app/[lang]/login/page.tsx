@@ -9,6 +9,7 @@ import { getDictionary } from "@/lib/i18n/server"
 import { LoginButton, LoginButtonFallback } from "@/features/auth/login-button"
 import { LoginGimmick } from "@/features/auth/login-gimmick"
 import { Tagline } from "@/features/auth/login-parts"
+import { ThemeToggle } from "@/features/auth/theme-toggle"
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getDictionary()
@@ -36,6 +37,9 @@ export default async function LoginPage() {
           className={`${mono} justify-self-center text-[11px] whitespace-nowrap min-[360px]:text-[13px] min-[360px]:tracking-[0.08em] md:text-2xl md:tracking-[0.12em]`}
         >
           re.<span className="mx-1.5 min-[360px]:mx-2 md:mx-8">{"//"}</span>Voiloid
+          <span className="ml-3 hidden rounded-full border border-current px-2 py-0.5 align-middle text-[10px] tracking-[0.12em] md:inline-block">
+            BETA
+          </span>
         </p>
         <a
           href={REBUILER_URL}
@@ -56,7 +60,10 @@ export default async function LoginPage() {
         </div>
 
         <section className="pb-10 md:pb-16">
-          <p className={`${mono} text-xs md:text-sm ${muted}`}>{"// Voiloid — Login"}</p>
+          <p className={`${mono} flex items-center gap-3 text-xs md:text-sm ${muted}`}>
+            {"// Voiloid — Login"}
+            <span className="rounded-full border border-current px-2 py-0.5 text-[10px] tracking-[0.12em]">BETA</span>
+          </p>
           <h1 className="mt-6 text-[clamp(1.5rem,8.5vw,3.75rem)] leading-[1.1] font-medium tracking-tighter lg:text-[clamp(2.5rem,4.2vw,4.5rem)]">
             <Tagline line1={t.login.taglineLine1} line2={t.login.taglineLine2} />
           </h1>
@@ -70,6 +77,7 @@ export default async function LoginPage() {
               <LockSimpleIcon className="mt-0.5 size-3.5 shrink-0" />
               {t.login.privacy}
             </p>
+            <p className={`max-w-md text-xs leading-relaxed ${muted}`}>{t.login.beta}</p>
           </div>
         </section>
       </div>
@@ -92,6 +100,7 @@ export default async function LoginPage() {
               </a>
             ))}
           </p>
+          <ThemeToggle className="cursor-pointer self-start text-left transition-colors hover:text-black dark:hover:text-white" />
         </div>
         <Image
           src="/rebuiler-mark.svg"

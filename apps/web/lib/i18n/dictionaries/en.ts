@@ -125,6 +125,7 @@ export const en: Dictionary = {
     lead: "Manage your reading bot's settings, dictionary and voices from the browser.",
     loginWithDiscord: "Login with Discord",
     privacy: "You'll be taken to Discord to authorize. Your Discord password is never sent to Voiloid.",
+    beta: "Voiloid is currently in beta. Features and screens may change without notice, and things may occasionally break.",
     note: "After logging in, you can configure reading for the servers you manage.",
     demo: {
       caption: "Messages in a text channel are read aloud in the voice channel with the voice you choose.",
