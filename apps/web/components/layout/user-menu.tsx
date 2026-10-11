@@ -29,6 +29,8 @@ function submitLogout() {
   const form = document.createElement("form")
   form.method = "post"
   form.action = "/api/auth/logout"
+  // LogoutForm と同じく、本文を使わないので text/plain で送る
+  form.enctype = "text/plain"
   document.body.append(form)
   form.submit()
 }
