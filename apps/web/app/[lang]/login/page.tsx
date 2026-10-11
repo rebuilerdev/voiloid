@@ -79,12 +79,18 @@ export default async function LoginPage() {
           <p className="leading-relaxed">{t.login.note}</p>
           <p>
             © rebuiler.
-            <a
-              href={REBUILER_URL}
-              className="ml-5 underline-offset-4 transition-colors hover:text-black hover:underline dark:hover:text-white"
-            >
-              rebuiler.dev
-            </a>
+            {[
+              { label: "rebuiler.dev", href: REBUILER_URL },
+              { label: "Terms", href: `${REBUILER_URL}/voiloid/terms` },
+            ].map(({ label, href }) => (
+              <a
+                key={label}
+                href={href}
+                className="ml-5 underline-offset-4 transition-colors hover:text-black hover:underline dark:hover:text-white"
+              >
+                {label}
+              </a>
+            ))}
           </p>
         </div>
         <Image
