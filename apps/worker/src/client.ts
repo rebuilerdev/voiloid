@@ -6,8 +6,8 @@
  */
 import {
   gatewayMessageSchema,
+  WORKER_CAPABILITIES,
   WORKER_CLOSE,
-  WORKER_CAPABILITY,
   WORKER_PROTOCOL_VERSION,
   type EngineReport,
   type SynthesizeJob,
@@ -167,7 +167,7 @@ export function createWorkerClient(options: WorkerClientOptions) {
           workerVersion: options.version,
           maxConcurrency: options.maxConcurrency,
           engines,
-          capabilities: [WORKER_CAPABILITY.configure],
+          capabilities: [...WORKER_CAPABILITIES],
         })
       })
     })
@@ -205,8 +205,19 @@ export function createWorkerClient(options: WorkerClientOptions) {
       connected = false
       connectionAbort.abort()
       if (stopped) return
-      logger.warn({ code, reason: reason.toString() }, "disconnected from the gateway")
-      const permanent = rejected || code === WORKER_CLOSE.DISABLED || code === WORKER_CLOSE.INVALID_HELLO
+      if (code === WORKER_CLOSE.UNSUPPORTED_PROTOCOL) {
+        logger.error(
+          { code, version: options.version },
+          "the gateway no longer supports this worker version (pull the latest image and restart the worker)",
+        )
+      } else {
+        logger.warn({ code, reason: reason.toString() }, "disconnected from the gateway")
+      }
+      const permanent =
+        rejected ||
+        code === WORKER_CLOSE.DISABLED ||
+        code === WORKER_CLOSE.INVALID_HELLO ||
+        code === WORKER_CLOSE.UNSUPPORTED_PROTOCOL
       scheduleReconnect(permanent ? backoff.rejectedMs : delay)
       if (!permanent) delay = Math.min(delay * 2, backoff.maxMs)
     })

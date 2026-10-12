@@ -109,12 +109,13 @@ services:
       gateway: { condition: service_healthy }
 
   # 公式Worker（同じマシンで VOICEVOX・AivisSpeech を動かす場合）。
-  # トークンは運営コンソールの「Worker」→「公式Worker」で（VOICEVOX・AivisSpeech を選んで）発行し、
+  # 自鯖Worker と同じ、GHCR に公開した Worker のイメージを使う（デプロイのたびに最新を取得する）。
+  # 古い Worker が混ざっていても動くので、Worker の更新はほかのサービスと揃えなくてよい。
+  # トークンは運営コンソールの「Worker」→「公式Workerを追加」で（VOICEVOX・AivisSpeech を選んで）発行し、
   # .env の OFFICIAL_WORKER_TOKEN に設定する
   official-worker:
     <<: *app
-    image: voiloid/worker:${IMAGE_TAG:-latest}
-    build: { <<: *build, target: worker }
+    image: ${WORKER_IMAGE:-ghcr.io/rebuilerdev/voiloid-worker:latest}
     profiles: ["official-worker"]
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-info}

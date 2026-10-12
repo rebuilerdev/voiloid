@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { WORKER_CONTROL_SERVER, WORKER_IMAGE } from "@/lib/config"
 import { cn } from "@/lib/utils"
+import { createOfficialWorker, getAdminWorker } from "@/services/admin"
 import { createWorker, getWorker } from "@/services/workers"
 import { SELECTABLE_ENGINES, WORKER_NAME_LENGTH, type Worker } from "@/types/worker"
 
@@ -35,49 +36,105 @@ const steps: Step[] = ["basic", "engine", "setup", "connection"]
 /** 接続確認のポーリング間隔 */
 const CONNECTION_POLL_MS = 3000
 
-/** エンジンの URL（Worker のコンテナから、同じマシンで動くエンジンへ接続する） */
-const ENGINE_URLS: Record<string, [string, string]> = {
-  VOICEVOX: ["VOICEVOX_URL", "http://host.docker.internal:50021"],
-  AivisSpeech: ["AIVISSPEECH_URL", "http://host.docker.internal:10101"],
-  COEIROINK: ["COEIROINK_URL", "http://host.docker.internal:50032"],
+/** 公式の Docker イメージがあるエンジン（Worker と一緒に起動する）。サービス名・イメージ・ポート */
+const ENGINE_CONTAINERS: Record<string, { service: string; image: string; port: number }> = {
+  VOICEVOX: { service: "voicevox", image: "voicevox/voicevox_engine:cpu-latest", port: 50021 },
+  AivisSpeech: { service: "aivisspeech", image: "ghcr.io/aivis-project/aivisspeech-engine:cpu-latest", port: 10101 },
 }
 
-function setupSnippets(token: string, engines: string[]) {
-  const env: Record<string, string> = {
+/** エンジンの URL の環境変数と、同じマシンで別に動かす場合のポート */
+const ENGINE_URLS: Record<string, { key: string; port: number }> = {
+  VOICEVOX: { key: "VOICEVOX_URL", port: 50021 },
+  AivisSpeech: { key: "AIVISSPEECH_URL", port: 10101 },
+  COEIROINK: { key: "COEIROINK_URL", port: 50032 },
+}
+
+/** 公式の Docker イメージが無く、同じマシンで別に起動してもらうエンジンがある */
+export const needsHostEngine = (engines: string[]) => engines.some((e) => !ENGINE_CONTAINERS[e])
+
+const HOST = "host.docker.internal"
+
+/**
+ * Worker の起動方法（公式Worker・自鯖Worker で共通）。
+ * compose と docker run では、エンジンのコンテナも一緒に起動する（Worker からはサービス名で接続する）。
+ * 環境変数だけの場合は、エンジンが同じマシンで動いている前提にする。
+ */
+export function setupSnippets(token: string, engines: string[]) {
+  const base = {
     CONTROL_SERVER: WORKER_CONTROL_SERVER,
     WORKER_TOKEN: token,
     WORKER_ENGINES: engines.join(","),
-    ...Object.fromEntries(engines.flatMap((e) => (ENGINE_URLS[e] ? [ENGINE_URLS[e]] : []))),
   }
+  const urls = (bundled: boolean) =>
+    Object.fromEntries(
+      engines.flatMap((e) => {
+        const url = ENGINE_URLS[e]
+        if (!url) return []
+        const container = bundled ? ENGINE_CONTAINERS[e] : undefined
+        return [[url.key, container ? `http://${container.service}:${container.port}` : `http://${HOST}:${url.port}`]]
+      }),
+    )
+  const containers = engines.flatMap((e) => (ENGINE_CONTAINERS[e] ? [ENGINE_CONTAINERS[e]] : []))
+  const hostEngine = needsHostEngine(engines)
+
+  const bundledEnv = { ...base, ...urls(true) }
   const compose = [
     "services:",
     "  worker:",
     `    image: ${WORKER_IMAGE}`,
     "    restart: unless-stopped",
-    "    extra_hosts:",
-    '      - "host.docker.internal:host-gateway"',
+    ...(hostEngine ? ["    extra_hosts:", `      - "${HOST}:host-gateway"`] : []),
     "    environment:",
-    ...Object.entries(env).map(([k, v]) => `      ${k}: ${v}`),
+    ...Object.entries(bundledEnv).map(([k, v]) => `      ${k}: ${v}`),
+    ...(containers.length > 0 ? [`    depends_on: [${containers.map((c) => c.service).join(", ")}]`] : []),
+    ...containers.flatMap((c) => ["", `  ${c.service}:`, `    image: ${c.image}`, "    restart: unless-stopped"]),
   ].join("\n")
+
+  const network = containers.length > 0 ? ["--network voiloid-worker"] : []
   const docker = [
-    "docker run -d --name voiloid-worker \\",
-    "  --restart unless-stopped \\",
-    "  --add-host host.docker.internal:host-gateway \\",
-    ...Object.entries(env).map(([k, v]) => `  -e ${k}=${v} \\`),
-    `  ${WORKER_IMAGE}`,
-  ].join("\n")
-  const envFile = Object.entries(env)
+    ...(containers.length > 0
+      ? [
+          "docker network create voiloid-worker",
+          ...containers.map((c) =>
+            [
+              `docker run -d --name ${c.service} \\`,
+              "  --restart unless-stopped \\",
+              "  --network voiloid-worker \\",
+              `  ${c.image}`,
+            ].join("\n")
+          ),
+        ]
+      : []),
+    [
+      "docker run -d --name voiloid-worker \\",
+      "  --restart unless-stopped \\",
+      ...network.map((n) => `  ${n} \\`),
+      ...(hostEngine ? [`  --add-host ${HOST}:host-gateway \\`] : []),
+      ...Object.entries(bundledEnv).map(([k, v]) => `  -e ${k}=${v} \\`),
+      `  ${WORKER_IMAGE}`,
+    ].join("\n"),
+  ].join("\n\n")
+
+  const envFile = Object.entries({ ...base, ...urls(false) })
     .map(([k, v]) => `${k}=${v}`)
     .join("\n")
   return { compose, docker, envFile }
 }
 
+/** 公式Worker（運営コンソール）と自鯖Worker で変わるところ */
+const KINDS = {
+  private: { create: createWorker, get: getWorker, href: (id: string) => `/workers/${id}` },
+  official: { create: createOfficialWorker, get: getAdminWorker, href: (id: string) => `/admin/workers/${id}` },
+}
+
 /**
  * Add Worker（仕様書 §39〜43）: 1. Basic → 2. Engine → 3. Setup → 4. Connection
+ * 公式Worker も同じ手順・同じ画面で登録する（kind = "official"）。
  * トークンは state のみで保持し、localStorage 等には保存しない。
  */
-export function WorkerSetupWizard() {
+export function WorkerSetupWizard({ kind = "private" }: { kind?: keyof typeof KINDS }) {
   const { t } = useI18n()
+  const api = KINDS[kind]
   const [step, setStep] = useState<Step>("basic")
   const [name, setName] = useState("")
   const [nameTouched, setNameTouched] = useState(false)
@@ -97,21 +154,21 @@ export function WorkerSetupWizard() {
     if (step !== "connection" || !created || connected) return
     const id = setInterval(async () => {
       try {
-        const w = await getWorker(created.worker.id)
+        const w = await api.get(created.worker.id)
         if (w.status === "online" || w.status === "busy") setConnected(w)
       } catch {
         // 次回に再試行
       }
     }, CONNECTION_POLL_MS)
     return () => clearInterval(id)
-  }, [step, created, connected])
+  }, [step, created, connected, api])
 
   async function create() {
     setCreating(true)
     try {
-      const res = await createWorker({ name: name.trim(), engines })
+      const res = await api.create({ name: name.trim(), engines })
       setCreated(res)
-      toast.success(t.toast.workerCreated)
+      toast.success(kind === "official" ? t.admin.workerCreated : t.toast.workerCreated)
       setStep("setup")
     } catch {
       toast.error(t.errors.saveFailed)
@@ -171,7 +228,7 @@ export function WorkerSetupWizard() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   onBlur={() => setNameTouched(true)}
-                  placeholder={t.addWorker.namePlaceholder}
+                  placeholder={kind === "official" ? t.admin.workerNamePlaceholder : t.addWorker.namePlaceholder}
                   maxLength={WORKER_NAME_LENGTH.max}
                   aria-invalid={(nameTouched && !nameValid) || undefined}
                   autoFocus
@@ -261,7 +318,7 @@ export function WorkerSetupWizard() {
                     </li>
                   ))}
                 </ul>
-                <GuardedLink href={`/workers/${connected.id}`} className={buttonVariants()}>
+                <GuardedLink href={api.href(connected.id)} className={buttonVariants()}>
                   {t.addWorker.openWorker}
                 </GuardedLink>
               </>
@@ -307,6 +364,12 @@ function SetupStep({ token, engines, onNext }: { token: string; engines: string[
             {t.addWorker.tokenWarning}
           </p>
         </div>
+        {needsHostEngine(engines) && (
+          <p className="flex items-start gap-1.5 text-muted-foreground">
+            <WarningIcon weight="fill" className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+            {t.addWorker.hostEngineHint}
+          </p>
+        )}
         <Tabs defaultValue="compose" className="min-w-0">
           <div className="max-w-full overflow-x-auto">
             <TabsList>

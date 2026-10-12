@@ -25,6 +25,10 @@ export interface Worker {
   concurrencyLimit?: number
   /** 接続中の Worker が、Web の設定で同時処理の数を増やせる（false = 古い Worker のため減らすことしかできない） */
   concurrencyConfigurable?: boolean
+  /** Worker のバージョン（最後に接続したときの申告） */
+  version?: string
+  /** required = 古いため接続できない（更新が必要） / available = 更新すると使える機能がある */
+  update?: "available" | "required"
   latency?: number
   lastSeenAt?: string
   queue?: number

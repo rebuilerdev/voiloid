@@ -101,9 +101,12 @@ describe("接続・hello", () => {
     const { worker, token } = await registerTestWorker(h.db)
     const w = fake(token)
     await w.connect()
+    const status = async () => (await h.db.worker.findUniqueOrThrow({ where: { id: worker.id } })).status
+    // 登録直後の状態も OFFLINE なので、いったん ONLINE になるのを待ってから切断する
+    await until(async () => (await status()) === "ONLINE")
     await until(async () => (await h.redis.get(redisKeys.workerLive(worker.id))) !== null)
     w.close()
-    await until(async () => (await h.db.worker.findUniqueOrThrow({ where: { id: worker.id } })).status === "OFFLINE")
+    await until(async () => (await status()) === "OFFLINE")
     expect(await h.redis.get(redisKeys.workerLive(worker.id))).toBeNull()
   })
 
@@ -113,13 +116,38 @@ describe("接続・hello", () => {
     const code = await new Promise<number>((resolve) => silent.on("close", (c) => resolve(c)))
     expect(code).toBe(WORKER_CLOSE.HELLO_TIMEOUT)
 
-    const old = fake(token)
-    await expect(old.connect({ protocolVersion: 999 })).rejects.toThrow(String(WORKER_CLOSE.INVALID_HELLO))
-
     const invalid = fake(token)
     await expect(invalid.connect({ hello: { type: "hello", engines: "x" } })).rejects.toThrow(
       String(WORKER_CLOSE.INVALID_HELLO),
     )
+  })
+
+  it("対応していないプロトコルの Worker は、更新が必要なコードで切断し、記録する（対応した版で接続すると消す）", async () => {
+    const { worker, token } = await registerTestWorker(h.db)
+    const old = fake(token)
+    await expect(old.connect({ protocolVersion: 999 })).rejects.toThrow(String(WORKER_CLOSE.UNSUPPORTED_PROTOCOL))
+    await until(async () => (await h.redis.get(redisKeys.workerRejected(worker.id))) !== null)
+    expect(JSON.parse((await h.redis.get(redisKeys.workerRejected(worker.id)))!)).toMatchObject({
+      protocolVersion: 999,
+      workerVersion: "1.2.3",
+    })
+
+    await fake(token).connect()
+    await until(async () => (await h.redis.get(redisKeys.workerRejected(worker.id))) === null)
+  })
+
+  it("新しい Worker が送る、知らないエンジン・知らないメッセージは無視して接続を続ける", async () => {
+    const { worker, token } = await registerTestWorker(h.db)
+    const w = fake(token, [voicevox, { ...voicevox, engine: "FutureEngine" } as never])
+    await w.connect({ capabilities: ["configure", "future-feature"] })
+    const live = () => h.gateway.registry.get(worker.id)
+    expect([...live()!.engines.keys()]).toEqual(["VOICEVOX"])
+
+    w.socket?.send(JSON.stringify({ type: "future-message", value: 1 }))
+    w.socket?.send(JSON.stringify({ type: "engines", engines: [voicevox, { ...voicevox, engine: "FutureEngine" }] }))
+    await until(() => live()?.engines.size === 1)
+    expect(w.closeCode).toBeUndefined()
+    expect(h.gateway.registry.liveState(live()!)).toMatchObject({ outdated: false })
   })
 
   it("同じ Worker が再接続したら古い接続を切断する", async () => {
@@ -183,7 +211,13 @@ describe("接続・hello", () => {
     void synthesize(guild.discordGuildId, null, "2件目")
     await until(() => live()?.waiting?.length === 1)
     expect(w.jobs).toHaveLength(1)
-    expect(h.gateway.registry.liveState(live()!)).toMatchObject({ status: "busy", runningJobs: 1, queue: 1 })
+    // できることを申告しない古い Worker は「更新あり」
+    expect(h.gateway.registry.liveState(live()!)).toMatchObject({
+      status: "busy",
+      runningJobs: 1,
+      queue: 1,
+      outdated: true,
+    })
 
     // 上限を外すと、待っていた依頼をすぐに送る（切断しない）
     await h.db.worker.update({ where: { id: worker.id }, data: { concurrencyLimit: null } })
@@ -201,7 +235,11 @@ describe("接続・hello", () => {
     await until(() => w.configured.length === 1)
     expect(w.configured).toEqual([8])
     expect(live()).toMatchObject({ maxConcurrency: 8, reportedConcurrency: 2, configurable: true })
-    expect(h.gateway.registry.liveState(live()!)).toMatchObject({ maxConcurrency: 8, configurable: true })
+    expect(h.gateway.registry.liveState(live()!)).toMatchObject({
+      maxConcurrency: 8,
+      configurable: true,
+      outdated: false,
+    })
 
     // 設定を外すと、Worker の申告（2）に戻すよう伝える
     await h.db.worker.update({ where: { id: worker.id }, data: { concurrencyLimit: null } })

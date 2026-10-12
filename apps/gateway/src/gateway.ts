@@ -36,6 +36,7 @@ export function createGateway(options: GatewayOptions) {
   const workers = createWorkerServer({
     repos: options.repos,
     registry,
+    redis: options.redis,
     logger: options.logger,
     heartbeatIntervalMs: options.heartbeatIntervalMs,
     helloTimeoutMs: options.helloTimeoutMs,

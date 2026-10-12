@@ -7,13 +7,30 @@
 import { z } from "zod"
 
 import { engineIdSchema, voiceSettingsSchema } from "../contracts"
+import { isEngineId } from "../engines"
 
+/**
+ * Worker と Gateway の互換性の決まり（古い Worker が混ざっていても動き続けるようにする）。
+ * - 機能を足すときは、プロトコルのバージョンを上げずに WORKER_CAPABILITY に足す。
+ *   Gateway は、その機能を申告した Worker にだけ使い、申告しない Worker には今までどおりに振る舞う
+ * - メッセージに項目を足すときは、省略できる項目にする（受け取る側は知らない項目を無視する）
+ * - 知らない種類のメッセージ・知らないエンジンは、エラーにせず無視する
+ * - 互換性を保てない変更をするときだけ WORKER_PROTOCOL_VERSION を上げる。
+ *   古い Worker を受け付けなくする場合は MIN_WORKER_PROTOCOL_VERSION も上げる（Gateway は理由を付けて切断し、画面に更新を案内する）
+ */
 export const WORKER_PROTOCOL_VERSION = 1
+/** Gateway が受け付ける、いちばん古いプロトコルのバージョン */
+export const MIN_WORKER_PROTOCOL_VERSION = 1
+
+export const isSupportedProtocol = (version: number) =>
+  version >= MIN_WORKER_PROTOCOL_VERSION && version <= WORKER_PROTOCOL_VERSION
 
 /** WebSocket の close code（4000 番台はアプリケーション定義） */
 export const WORKER_CLOSE = {
-  /** hello が不正、またはプロトコルバージョン非対応 */
+  /** hello が不正 */
   INVALID_HELLO: 4001,
+  /** プロトコルのバージョンに対応していない（Worker の更新が必要） */
+  UNSUPPORTED_PROTOCOL: 4002,
   /** Worker が無効化・削除された */
   DISABLED: 4003,
   /** 同じ Worker の新しい接続に置き換えられた */
@@ -44,6 +61,19 @@ export const engineReportSchema = z.object({
 
 export type EngineReport = z.infer<typeof engineReportSchema>
 
+/** エンジンの一覧。この版が知らないエンジン（新しい Worker が対応したもの）は、エラーにせず除く */
+const isUnknownEngine = (report: unknown) =>
+  typeof report === "object" &&
+  report !== null &&
+  "engine" in report &&
+  typeof report.engine === "string" &&
+  !isEngineId(report.engine)
+
+const engineReportsSchema = z.preprocess(
+  (value) => (Array.isArray(value) ? (value as unknown[]).filter((e) => !isUnknownEngine(e)) : value),
+  z.array(engineReportSchema).max(16),
+)
+
 /* ---------- Worker → Gateway ---------- */
 
 /** Worker ができること（hello で申告する。古い Worker は申告しない） */
@@ -52,18 +82,21 @@ export const WORKER_CAPABILITY = {
   configure: "configure",
 } as const
 
+/** この版の Worker ができることのすべて。どれかを申告しない Worker は「更新あり」と表示する */
+export const WORKER_CAPABILITIES: readonly string[] = Object.values(WORKER_CAPABILITY)
+
 export const workerHelloSchema = z.object({
   type: z.literal("hello"),
   protocolVersion: z.number().int(),
   workerVersion: z.string().max(64),
   maxConcurrency: z.number().int().min(1).max(64),
-  engines: z.array(engineReportSchema).max(16),
+  engines: engineReportsSchema,
   capabilities: z.array(z.string().max(32)).max(16).optional(),
 })
 
 export const workerEnginesSchema = z.object({
   type: z.literal("engines"),
-  engines: z.array(engineReportSchema).max(16),
+  engines: engineReportsSchema,
 })
 
 export const workerResultSchema = z.discriminatedUnion("ok", [
@@ -184,6 +217,8 @@ export const redisKeys = {
   guildChannels: (discordGuildId: string) => `${PREFIX}:guild-channels:${discordGuildId}`,
   /** Worker のリアルタイム状態（Gateway が更新） */
   workerLive: (workerId: string) => `${PREFIX}:worker-live:${workerId}`,
+  /** プロトコルのバージョンが古くて接続を断った Worker（Gateway が書く。画面に更新を案内する） */
+  workerRejected: (workerId: string) => `${PREFIX}:worker-rejected:${workerId}`,
   /** サーバーの読み上げセッション（Bot が更新）。hash: botUserId → JSON */
   guildSessions: (discordGuildId: string) => `${PREFIX}:guild-sessions:${discordGuildId}`,
   /** Bot の稼働状態（Bot が定期更新） */
@@ -208,11 +243,22 @@ export const workerLiveSchema = z.object({
   maxConcurrency: z.number().int().positive(),
   /** 同時処理の数を Web から変えられる（Worker が configure に対応している） */
   configurable: z.boolean().optional(),
+  /** この版の Worker ができることのうち、申告していないものがある（更新すると使える） */
+  outdated: z.boolean().optional(),
   latencyMs: z.number().nonnegative().optional(),
   lastSeenAt: z.iso.datetime(),
 })
 
 export type WorkerLive = z.infer<typeof workerLiveSchema>
+
+/** Redis の、接続を断った Worker の記録 */
+export const workerRejectedSchema = z.object({
+  protocolVersion: z.number().int(),
+  workerVersion: z.string().max(64),
+  at: z.iso.datetime(),
+})
+
+export type WorkerRejected = z.infer<typeof workerRejectedSchema>
 
 /** Redis の読み上げセッション */
 export const guildSessionSchema = z.object({

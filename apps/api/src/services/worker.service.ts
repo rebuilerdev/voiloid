@@ -35,9 +35,14 @@ import type { LiveService } from "./live.service"
 
 const CONNECTED = new Set<WorkerStatus>([WorkerStatus.ONLINE, WorkerStatus.BUSY, WorkerStatus.DEGRADED])
 
-export function toApiWorker(worker: WorkerRecord, live: WorkerLive | undefined): Worker {
+/**
+ * @param rejected Gateway が「プロトコルのバージョンが古い」として接続を断った（更新しないと使えない）
+ */
+export function toApiWorker(worker: WorkerRecord, live: WorkerLive | undefined, rejected = false): Worker {
   let status: Worker["status"]
-  if (live) {
+  if (rejected && !live) {
+    status = "error"
+  } else if (live) {
     status = live.status === "busy" ? "busy" : live.status === "degraded" ? "error" : "online"
   } else {
     // DB 上は接続中でも、リアルタイム状態が切れていれば切断とみなす（Gateway の異常終了など）
@@ -59,6 +64,9 @@ export function toApiWorker(worker: WorkerRecord, live: WorkerLive | undefined):
     workerConcurrency: worker.maxConcurrency,
     concurrencyLimit: worker.concurrencyLimit ?? undefined,
     concurrencyConfigurable: live?.configurable,
+    version: worker.version ?? undefined,
+    // required = 更新しないと接続できない / available = 更新すると使える機能がある
+    update: rejected && !live ? "required" : live?.outdated ? "available" : undefined,
     latency: live?.latencyMs,
     lastSeenAt: live?.lastSeenAt ?? worker.lastSeenAt?.toISOString(),
     queue: live?.queue ?? 0,
@@ -74,14 +82,16 @@ export function createWorkerService(deps: AppDeps, access: AccessService, live: 
   }
 
   async function withLive(worker: WorkerRecord): Promise<Worker> {
-    return toApiWorker(worker, (await live.workers([worker.id])).get(worker.id))
+    const [states, rejected] = await Promise.all([live.workers([worker.id]), live.rejectedWorkers([worker.id])])
+    return toApiWorker(worker, states.get(worker.id), rejected.has(worker.id))
   }
 
   return {
     async list(session: Session): Promise<Worker[]> {
       const workers = await deps.repos.workers.listVisibleTo(session.userId)
-      const states = await live.workers(workers.map((w) => w.id))
-      return workers.map((w) => toApiWorker(w, states.get(w.id)))
+      const ids = workers.map((w) => w.id)
+      const [states, rejected] = await Promise.all([live.workers(ids), live.rejectedWorkers(ids)])
+      return workers.map((w) => toApiWorker(w, states.get(w.id), rejected.has(w.id)))
     },
 
     async get(session: Session, publicId: string): Promise<Worker> {

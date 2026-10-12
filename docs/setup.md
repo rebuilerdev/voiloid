@@ -185,7 +185,7 @@ openssl rand -hex 24       # POSTGRES_PASSWORD 用（URL に入れるため、�
 | `S3_ACCESS_KEY_ID` | ○ | アクセスキー ID |
 | `S3_SECRET_ACCESS_KEY` | ○ | シークレットアクセスキー |
 | `S3_FORCE_PATH_STYLE` | — | R2 では `true` を推奨 |
-| `WORKER_IMAGE` | ○ | 自鯖Worker の利用者に案内するイメージ（例: `ghcr.io/rebuilerdev/voiloid-worker:latest`）。`<owner>` を置き換えます |
+| `WORKER_IMAGE` | ○ | Worker のイメージ（例: `ghcr.io/rebuilerdev/voiloid-worker:latest`）。自鯖Worker の利用者への案内と、公式Worker の起動に使います |
 | `OFFICIAL_WORKER_TOKEN` | — | 同じマシンで公式Worker（VOICEVOX・AivisSpeech）を動かす場合のトークン。後から設定します（[運用ガイド](operations.md#5-公式workerの追加)） |
 | `LOG_LEVEL` | — | ログの詳しさ（既定 `info`） |
 | `BACKUP_DIR` | ○ | `/srv/voiloid/backups`（**絶対パス** にします） |
@@ -261,7 +261,9 @@ GitHub の「Runners」に、runner が「Idle」と表示されれば完了で�
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-公開後、GitHub の Organization →「Packages」→ `voiloid-worker` →「Package settings」→「Change visibility」で **Public** にします。非公開のままだと、利用者がイメージを取得できません。
+公式Worker も同じイメージを使います。公開したイメージは、普通の PC（amd64）と Raspberry Pi など（arm64）の両方で動きます。
+
+リポジトリが公開されていれば、イメージも公開されます。リポジトリが非公開の場合は、GitHub の Organization →「Packages」→ `voiloid-worker` →「Package settings」→「Change visibility」で **Public** にします。非公開のままだと、利用者がイメージを取得できません。
 
 ---
 

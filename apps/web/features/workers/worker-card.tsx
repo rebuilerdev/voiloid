@@ -9,6 +9,7 @@ import type { Worker } from "@/types/worker"
 
 import { isWorkerUp } from "@/features/workers/utils"
 import { WorkerStatusBadge } from "@/features/workers/worker-status-badge"
+import { WorkerUpdateBadge } from "@/features/workers/worker-update"
 
 /** Worker Card（仕様書 §30）: 名前・状態・Engine・実行中 Job・レイテンシ */
 export function WorkerCard({ worker }: { worker: Worker }) {
@@ -22,7 +23,10 @@ export function WorkerCard({ worker }: { worker: Worker }) {
           <GuardedLink href={`/workers/${worker.id}`} className="truncate after:absolute after:inset-0">
             {worker.name}
           </GuardedLink>
-          <WorkerStatusBadge status={worker.status} />
+          <span className="flex shrink-0 items-center gap-1.5">
+            <WorkerUpdateBadge worker={worker} />
+            <WorkerStatusBadge status={worker.status} />
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">

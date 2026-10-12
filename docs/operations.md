@@ -140,19 +140,25 @@ Web コンソールのサイドバーの「運営」から使います。
 
 ### 5-1. 登録する
 
+公式Worker の登録は、自鯖Worker と同じ手順・同じ画面で行います（[自鯖Worker ガイド 3](self-hosted-worker.md#3-登録して起動する)）。
+
 1. 「運営」→「Worker」→「公式Worker」タブ →「公式Workerを追加」
-2. 名前（例: `official-tokyo-01`）と、そのマシンで動かすエンジンを選ぶ
-3. 表示された **接続トークン** と `.env` の例を控える（表示されるのはこのときだけ。DB にはハッシュだけを保存します）
+2. **基本情報**: 名前（例: `official-tokyo-01`）
+3. **Engine**: そのマシンで動かすエンジンを選ぶ →「Workerを作成」
+4. **セットアップ**: 表示された **接続トークン** と起動の方法を控える（表示されるのはこのときだけ。DB にはハッシュだけを保存します）
+5. 起動したら「起動したので接続を確認」を押し、「Workerが接続されました」と出れば完了
 
 トークンは `wkr_<公開ID>.<秘密の値>` という形です。持っている人なら誰でもこの公式Worker として接続できるので、画像や文章に貼らず、動かすマシンにだけ置いてください。
 
 ### 5-2. 起動する
 
+公式Worker も、自鯖Worker と同じ GHCR のイメージ（`.env` の `WORKER_IMAGE`、既定は `ghcr.io/rebuilerdev/voiloid-worker:latest`）を使います。
+
 **A. 本番マシンで一緒に動かす（VOICEVOX・AivisSpeech・いちばん手軽）**
 
-1. 登録するときに、エンジンを VOICEVOX と AivisSpeech にする
+1. 登録するときに、エンジンを VOICEVOX と AivisSpeech にする（セットアップの画面は閉じてかまいません。トークンだけ控えます）
 2. `/srv/voiloid/.env` の `OFFICIAL_WORKER_TOKEN` にトークンを書く
-3. 再デプロイする（「Actions」→「Deploy」→「Run workflow」）。`official-worker`・`voicevox`・`aivisspeech` も起動します
+3. 再デプロイする（「Actions」→「Deploy」→「Run workflow」）。デプロイのたびに Worker・エンジンの最新のイメージを取得し、`official-worker`・`voicevox`・`aivisspeech` を起動します
 
 - 本番マシンの CPU とメモリを使います（目安: VOICEVOX 1〜2 GB、AivisSpeech 2〜4 GB）。読み上げが多い場合やメモリが足りない場合は B にしてください
 - 起動直後はエンジンがモデルを読み込むため、数分間「Unhealthy」と表示されます。読み込みが終われば、1 分ほどで「Healthy」になります
@@ -162,56 +168,24 @@ Web コンソールのサイドバーの「運営」から使います。
   docker compose --env-file /srv/voiloid/.env --profile official-worker rm -sf official-worker voicevox aivisspeech
   ```
 
-**B. 別のマシンで動かす（AivisSpeech なども可）**
+**B. 別のマシンで動かす（Raspberry Pi なども可）**
 
-Worker のマシンで、このリポジトリからイメージを作ります（GHCR のイメージを公開していなくても使えます）。
+登録の画面の「セットアップ」に表示された方法で、そのまま起動します（自鯖Worker とまったく同じです）。
 
-```bash
-git clone https://github.com/rebuilerdev/voiloid.git
-cd voiloid
-docker build --target worker -t voiloid/worker:local .
-```
+1. 作業用のフォルダ（例: `~/voiloid-worker`）に、表示された `compose.yaml` を保存する
+2. そのフォルダで `docker compose up -d` を実行する。選んだエンジン（VOICEVOX・AivisSpeech）のコンテナも一緒に起動します
+3. `docker compose logs -f worker` で `connected to the gateway` と出れば接続成功
 
-作業用のフォルダ（例: `~/voiloid-worker`）に、2 つのファイルを置きます。
+- `compose.yaml` にはトークンが書かれているので、`chmod 600 compose.yaml` にします
+- COEIROINK には公式の Docker イメージがありません。使う場合は、同じマシンで COEIROINK を起動しておきます
+- GPU があるマシンなら、`voicevox/voicevox_engine:nvidia-latest` に書き換えると速くなります（NVIDIA Container Toolkit が必要）
 
-`.env`（登録時に表示された 3 行。`chmod 600 .env` にする）:
+### 5-2-1. Worker を更新する
 
-```
-CONTROL_SERVER=wss://<あなたのドメイン>/worker
-WORKER_TOKEN=<トークン>
-WORKER_ENGINES=VOICEVOX,AivisSpeech
-```
+Worker は、本番（Gateway）と同じバージョンに揃えなくても動きます（[5-4](#5-4-古い-worker-との互換性)）。新しいバージョンのイメージを公開すると、古い Worker には一覧と詳細ページに「更新あり」と表示されます。
 
-`compose.yaml`:
-
-```yaml
-services:
-  worker:
-    image: voiloid/worker:local
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      VOICEVOX_URL: http://voicevox:50021
-      AIVISSPEECH_URL: http://aivisspeech:10101
-    depends_on: [voicevox, aivisspeech]
-
-  voicevox:
-    image: voicevox/voicevox_engine:cpu-latest
-    restart: unless-stopped
-
-  aivisspeech:
-    image: ghcr.io/aivis-project/aivisspeech-engine:cpu-latest
-    restart: unless-stopped
-```
-
-```bash
-docker compose up -d
-docker compose logs -f worker      # "connected to the gateway" と出れば接続成功
-```
-
-- `WORKER_ENGINES` には、そのマシンで **実際に動いている** エンジンだけを書きます（COEIROINK には公式の Docker イメージがありません）
-- GPU があるマシンなら、`voicevox/voicevox_engine:nvidia-latest` を使うと速くなります（NVIDIA Container Toolkit が必要）
-- 本番を更新したら、Worker も `git pull` → `docker build` → `docker compose up -d` で揃えます
+- A の場合: 再デプロイすると最新のイメージに入れ替わります
+- B の場合: Worker のマシンで `docker compose pull && docker compose up -d`
 
 ### 5-3. 詳細ページでできること
 
@@ -224,6 +198,16 @@ docker compose logs -f worker      # "connected to the gateway" と出れば接�
 | 同時処理の数 | この Worker が同時に処理する数（1〜64）。空なら Worker の設定（`MAX_CONCURRENCY`）を使います。Worker の設定より大きくも小さくもでき、超えた依頼は順番待ちになります。Worker は切断せず、すぐに反映されます。ただし古いバージョンの Worker は、Worker の設定より大きくできません（画面に案内が出ます。Worker を最新にすると大きくできます）。CPU のコア数より大きくすると、1 件ごとの処理が遅くなることがあります |
 | メンテナンス | 振り分けから外し、接続も受け付けなくなります（削除はしません） |
 | トークンを再発行 | 古いトークンはすぐに使えなくなり、接続も切れます。新しいトークンで起動し直してください |
+
+### 5-4. 古い Worker との互換性
+
+自鯖Worker は利用者が自分で更新するため、本番には古い Worker が混ざります。古い Worker もそのまま使えるように、次の決まりで作っています（`packages/shared/src/protocol/index.ts` の冒頭）。
+
+- 機能を足すときは、Worker の「できること」（`WORKER_CAPABILITY`）に足します。Gateway は、その機能を申告した Worker にだけ使い、申告しない古い Worker には今までどおりに振る舞います。古い Worker には「更新あり」と表示します
+- Worker・Gateway は、知らない種類のメッセージ・知らない項目・知らないエンジンを、エラーにせず無視します（新しい Worker が古い Gateway に、古い Worker が新しい Gateway につながっても切断しません）
+- 互換性を保てない変更をするときだけ、プロトコルのバージョン（`WORKER_PROTOCOL_VERSION`）を上げます。古い Worker を受け付けなくする場合は `MIN_WORKER_PROTOCOL_VERSION` も上げます。Gateway は古い Worker を「更新が必要」という理由で切断し、画面に「要更新」と更新の方法を表示します
+
+Worker のイメージは `v` で始まるタグを push すると公開されます（[構築 6-4](setup.md#6-4-自鯖worker-のイメージを公開する自鯖worker-を使う場合)）。
 
 ---
 

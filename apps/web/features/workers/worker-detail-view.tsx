@@ -20,6 +20,7 @@ import { WorkerConcurrencyLimit } from "@/features/workers/worker-concurrency-li
 import { WorkerMetrics } from "@/features/workers/worker-metrics"
 import { WorkerRenameDialog } from "@/features/workers/worker-rename-dialog"
 import { WorkerStatusBadge } from "@/features/workers/worker-status-badge"
+import { WorkerUpdateBadge, WorkerUpdateNotice } from "@/features/workers/worker-update"
 
 /** Worker Detail（仕様書 §32〜38）。状態は自動更新する */
 export function WorkerDetailView({
@@ -38,7 +39,10 @@ export function WorkerDetailView({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1.5">
           <h1 className="truncate font-heading text-lg font-semibold">{worker.name}</h1>
-          <WorkerStatusBadge status={worker.status} />
+          <span className="flex flex-wrap items-center gap-1.5">
+            <WorkerStatusBadge status={worker.status} />
+            <WorkerUpdateBadge worker={worker} />
+          </span>
         </div>
         <Button variant="outline" onClick={() => setRenaming(true)}>
           <PencilSimpleIcon data-icon="inline-start" />
@@ -46,7 +50,9 @@ export function WorkerDetailView({
         </Button>
       </div>
 
-      {(worker.status === "offline" || worker.status === "error") && (
+      {/* 古くて接続できないときは、切断・エラーの案内の代わりに更新の案内を出す */}
+      <WorkerUpdateNotice worker={worker} />
+      {(worker.status === "offline" || worker.status === "error") && worker.update !== "required" && (
         <div role="status" className="flex items-start gap-2 border-l-2 border-destructive bg-muted/40 p-3 text-xs">
           <WarningOctagonIcon weight="fill" className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
           {worker.status === "offline" ? t.workerDetail.offlineNotice : t.workerDetail.errorNotice}
@@ -71,6 +77,8 @@ export function WorkerDetailView({
                   {worker.type === "private" ? t.workerDetail.typePrivate : t.workerDetail.typeOfficial}
                 </Badge>
               </dd>
+              <dt className="text-muted-foreground">{t.workerDetail.workerVersion}</dt>
+              <dd className="tabular-nums">{worker.version ?? t.common.none}</dd>
               <dt className="text-muted-foreground">{t.workerDetail.created}</dt>
               <dd className="tabular-nums">{worker.createdAt ? f.date(worker.createdAt) : t.common.none}</dd>
               <dt className="text-muted-foreground">{t.workerDetail.lastSeen}</dt>

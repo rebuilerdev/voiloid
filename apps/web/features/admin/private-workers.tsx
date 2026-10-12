@@ -21,6 +21,7 @@ import { LoadMore } from "@/features/admin/load-more"
 import { SearchInput } from "@/features/admin/search-input"
 import { MaintenanceBadge, WorkerAdminMenu } from "@/features/admin/worker-admin-menu"
 import { WorkerStatusBadge } from "@/features/workers/worker-status-badge"
+import { WorkerUpdateBadge } from "@/features/workers/worker-update"
 
 const FILTERS: (AdminWorkerFilter | undefined)[] = [undefined, "connected", "disconnected", "disabled"]
 
@@ -102,6 +103,7 @@ export function PrivateWorkers({ initial, canEdit }: { initial: Page<AdminWorker
                       <TableCell>
                         <span className="flex flex-wrap items-center gap-1.5">
                           <WorkerStatusBadge status={w.status} />
+                          <WorkerUpdateBadge worker={w} />
                           <MaintenanceBadge worker={w} />
                         </span>
                       </TableCell>

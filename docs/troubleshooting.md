@@ -155,7 +155,7 @@ docker compose logs -f worker
 
 ### `docker pull` で `denied` / `unauthorized`
 
-GHCR の Worker のイメージが非公開です。公開するか（[構築 6-4](setup.md#6-4-自鯖worker-のイメージを公開する自鯖worker-を使う場合)）、ソースからビルドします（[運用 5-2](operations.md#5-2-起動する)）。
+GHCR の Worker のイメージが非公開か、まだ公開していません。公開してください（[構築 6-4](setup.md#6-4-自鯖worker-のイメージを公開する自鯖worker-を使う場合)）。
 
 ---
 

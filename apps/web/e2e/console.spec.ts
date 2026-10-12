@@ -134,7 +134,17 @@ test("Worker の登録でトークンとセットアップ手順を表示する"
   await page.getByRole("button", { name: "次へ" }).click()
   await page.getByRole("button", { name: "Workerを作成" }).click()
   await expect(page.getByText("WORKER_TOKEN").first()).toBeVisible()
-  await expect(page.getByText("host.docker.internal").first()).toBeVisible()
+  // 選んだエンジン（VOICEVOX）のコンテナも一緒に起動し、Worker はサービス名で接続する
+  await expect(page.getByText("voicevox/voicevox_engine:cpu-latest")).toBeVisible()
+  await expect(page.getByText(/VOICEVOX_URL: http:\/\/voicevox:50021/)).toBeVisible()
+})
+
+test("古い Worker には、更新の案内を表示する", async ({ page }) => {
+  await login(page, "/workers")
+  await expect(page.getByText("更新あり").first()).toBeVisible()
+  await page.getByRole("link", { name: "gaming-pc" }).click()
+  await expect(page.getByText("新しいバージョンのWorkerがあります")).toBeVisible()
+  await expect(page.getByText("docker compose pull")).toBeVisible()
 })
 
 test("セッション切れの Cookie を消してログイン画面へ戻る（リダイレクトのループにならない）", async ({ page, context }) => {

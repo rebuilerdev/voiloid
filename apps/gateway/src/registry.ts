@@ -48,6 +48,8 @@ export interface ConnectedWorker {
   concurrencyLimit?: number | null
   /** Worker が configure（同時処理の数の変更）に対応している */
   configurable?: boolean
+  /** この版の Worker ができることのうち、申告していないものがある（古い Worker） */
+  outdated?: boolean
   /** 上限に達したときの順番待ち */
   waiting?: WaitingJob[]
   version: string
@@ -260,6 +262,7 @@ export class WorkerRegistry {
       queue: Math.max(0, worker.pending.size - worker.maxConcurrency) + (worker.waiting?.length ?? 0),
       maxConcurrency: worker.maxConcurrency,
       configurable: worker.configurable === true,
+      outdated: worker.outdated === true,
       latencyMs: worker.latencyMs,
       lastSeenAt: worker.lastSeenAt.toISOString(),
     }

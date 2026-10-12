@@ -33,18 +33,20 @@ test("運営者にはサイドバーに運営コンソールが表示され、�
   expect(errors).toEqual([])
 })
 
-test("公式Worker を追加すると、トークンとセットアップの環境変数を一度だけ表示する", async ({ page }) => {
+test("公式Worker は、自鯖Worker と同じ手順の画面で追加し、エンジンも一緒に起動する方法を表示する", async ({ page }) => {
   await login(page, "/admin/workers")
-  await page.getByRole("button", { name: "公式Workerを追加" }).click()
-  const dialog = page.getByRole("dialog")
-  await dialog.getByLabel("名前").fill("official-e2e-01")
-  await dialog.getByRole("button", { name: "追加" }).click()
-  const issued = page.getByRole("dialog")
-  await expect(issued.getByText("接続トークン")).toBeVisible()
-  await expect(issued.getByText(/WORKER_TOKEN=wkr_/)).toBeVisible()
-  await expect(issued.getByText(/WORKER_ENGINES=VOICEVOX/)).toBeVisible()
-  await issued.getByRole("button", { name: "閉じる" }).click()
-  await expect(page.getByRole("cell", { name: /official-e2e-01/ })).toBeVisible()
+  await page.getByRole("link", { name: "公式Workerを追加" }).click()
+  await expect(page).toHaveURL(/\/admin\/workers\/new$/)
+  await page.getByLabel("Worker名").fill("official-e2e-01")
+  await page.getByRole("button", { name: "次へ" }).click()
+  await page.getByRole("button", { name: "Workerを作成" }).click()
+  await expect(page.getByText(/WORKER_TOKEN: wkr_/)).toBeVisible()
+  await expect(page.getByText("voicevox/voicevox_engine:cpu-latest")).toBeVisible()
+  await expect(page.getByText(/VOICEVOX_URL: http:\/\/voicevox:50021/)).toBeVisible()
+  await page.getByRole("button", { name: "起動したので接続を確認" }).click()
+  await page.getByRole("link", { name: "Workerを開く" }).click()
+  await expect(page).toHaveURL(/\/admin\/workers\/[^/]+$/)
+  await expect(page.getByRole("heading", { name: "official-e2e-01" })).toBeVisible()
 })
 
 test("問題のある公式Worker だけに絞り込み、名前で検索できる", async ({ page }) => {

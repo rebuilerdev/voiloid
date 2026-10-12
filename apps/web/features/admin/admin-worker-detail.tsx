@@ -33,6 +33,7 @@ import { MaintenanceBadge, WorkerAdminMenu } from "@/features/admin/worker-admin
 import { WorkerConcurrencyLimit } from "@/features/workers/worker-concurrency-limit"
 import { WorkerMetrics } from "@/features/workers/worker-metrics"
 import { WorkerStatusBadge } from "@/features/workers/worker-status-badge"
+import { WorkerUpdateBadge, WorkerUpdateNotice } from "@/features/workers/worker-update"
 
 /**
  * Worker の詳細（運営者）。公式Worker・自鯖Worker の両方を表示し、状態は自動更新する。
@@ -52,6 +53,7 @@ export function AdminWorkerDetail({ initial, canEdit }: { initial: AdminWorker; 
           <h1 className="truncate font-heading text-lg font-semibold">{worker.name}</h1>
           <span className="flex flex-wrap items-center gap-1.5">
             <WorkerStatusBadge status={worker.status} />
+            <WorkerUpdateBadge worker={worker} />
             <MaintenanceBadge worker={worker} />
           </span>
         </div>
@@ -59,6 +61,7 @@ export function AdminWorkerDetail({ initial, canEdit }: { initial: AdminWorker; 
           <WorkerAdminMenu worker={worker} onChanged={refresh} onDeleted={() => router.push("/admin/workers")} />
         )}
       </div>
+      <WorkerUpdateNotice worker={worker} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -88,6 +91,8 @@ export function AdminWorkerDetail({ initial, canEdit }: { initial: AdminWorker; 
                   </dd>
                 </>
               )}
+              <dt className="text-muted-foreground">{t.workerDetail.workerVersion}</dt>
+              <dd className="tabular-nums">{worker.version ?? t.common.none}</dd>
               <dt className="text-muted-foreground">{t.workerDetail.created}</dt>
               <dd className="tabular-nums">{worker.createdAt ? f.date(worker.createdAt) : t.common.none}</dd>
               <dt className="text-muted-foreground">{t.workerDetail.lastSeen}</dt>

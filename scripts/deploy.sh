@@ -37,8 +37,11 @@ log() {
 
 log "deploying $NEW_TAG (previous: ${PREVIOUS_TAG:-none})"
 
-# 1. ビルド
-IMAGE_TAG="$NEW_TAG" compose --profile tools --profile official-worker build
+# 1. ビルド（公式Worker は自鯖Worker と同じ GHCR のイメージを使うので、ビルドせずに最新を取得する）
+IMAGE_TAG="$NEW_TAG" compose --profile tools build
+if [[ -n "${OFFICIAL_WORKER_TOKEN:-}" ]]; then
+  compose --profile official-worker pull official-worker voicevox aivisspeech
+fi
 
 # 2. Migration 前のバックアップ（DB が動いている場合）
 if compose ps --status running --services | grep -qx postgres; then

@@ -10,14 +10,17 @@ import type { Duplex } from "node:stream"
 import { EngineHealth, verifyWorkerSecret, WorkerStatus, WorkerType, type Repositories } from "@voiloid/database"
 import { ENGINES } from "@voiloid/shared"
 import {
+  isSupportedProtocol,
   parseWorkerToken,
+  redisKeys,
+  WORKER_CAPABILITIES,
   WORKER_CAPABILITY,
   WORKER_CLOSE,
-  WORKER_PROTOCOL_VERSION,
   workerMessageSchema,
   type EngineReport,
   type GatewayMessage,
 } from "@voiloid/shared/protocol"
+import type { Redis } from "ioredis"
 import type { Logger } from "pino"
 import { WebSocketServer, type RawData, type WebSocket } from "ws"
 
@@ -28,6 +31,16 @@ export const WORKER_PATH = "/worker"
 const LAST_SEEN_WRITE_INTERVAL_MS = 60_000
 /** 1 メッセージの上限（base64 の WAV を含む） */
 const MAX_PAYLOAD = 16 * 1024 * 1024
+/** 接続を断った Worker の記録を残す時間（Worker は 1 分ほどおきに接続し直すので、そのたびに延びる） */
+const REJECTED_TTL_SECONDS = 10 * 60
+/** この版の Gateway が知っている、Worker から届くメッセージの種類 */
+const KNOWN_MESSAGE_TYPES = new Set(["hello", "engines", "result"])
+
+/** 新しい Worker が送ってきた、この版が知らない種類のメッセージ（無視する） */
+function isUnknownType(value: unknown) {
+  if (typeof value !== "object" || value === null || !("type" in value)) return false
+  return typeof value.type === "string" && !KNOWN_MESSAGE_TYPES.has(value.type)
+}
 
 interface AuthenticatedWorker {
   id: string
@@ -43,6 +56,8 @@ interface AuthenticatedWorker {
 export interface WorkerServerOptions {
   repos: Repositories
   registry: WorkerRegistry
+  /** 接続を断った Worker を記録する（画面に更新を案内する） */
+  redis: Pick<Redis, "set" | "del">
   logger: Logger
   heartbeatIntervalMs: number
   helloTimeoutMs: number
@@ -66,7 +81,7 @@ function engineSync(reports: EngineReport[]) {
 }
 
 export function createWorkerServer(options: WorkerServerOptions) {
-  const { repos, registry, logger } = options
+  const { repos, registry, logger, redis } = options
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD })
   const alive = new WeakMap<WebSocket, { alive: boolean; pingSentAt: number; lastSeenWrite: number }>()
 
@@ -118,10 +133,15 @@ export function createWorkerServer(options: WorkerServerOptions) {
 
     socket.on("message", (data, isBinary) => {
       if (isBinary) return
-      let message
+      let raw: unknown
       try {
-        message = workerMessageSchema.safeParse(JSON.parse(rawText(data)))
+        raw = JSON.parse(rawText(data))
       } catch {
+        return
+      }
+      const message = workerMessageSchema.safeParse(raw)
+      if (!message.success && worker && isUnknownType(raw)) {
+        logger.debug({ worker: auth.publicId }, "ignored an unknown message from worker")
         return
       }
       if (!message.success) {
@@ -132,11 +152,30 @@ export function createWorkerServer(options: WorkerServerOptions) {
       const msg = message.data
 
       if (!worker) {
-        if (msg.type !== "hello" || msg.protocolVersion !== WORKER_PROTOCOL_VERSION) {
-          socket.close(WORKER_CLOSE.INVALID_HELLO, "unsupported protocol")
+        if (msg.type !== "hello") {
+          socket.close(WORKER_CLOSE.INVALID_HELLO, "invalid hello")
+          return
+        }
+        if (!isSupportedProtocol(msg.protocolVersion)) {
+          clearTimeout(helloTimer)
+          logger.warn(
+            { worker: auth.publicId, protocolVersion: msg.protocolVersion, version: msg.workerVersion },
+            "rejected a worker with an unsupported protocol version",
+          )
+          const rejected = {
+            protocolVersion: msg.protocolVersion,
+            workerVersion: msg.workerVersion,
+            at: new Date().toISOString(),
+          }
+          void redis
+            .set(redisKeys.workerRejected(auth.id), JSON.stringify(rejected), "EX", REJECTED_TTL_SECONDS)
+            .catch(() => undefined)
+          socket.close(WORKER_CLOSE.UNSUPPORTED_PROTOCOL, "unsupported protocol version: update the worker")
           return
         }
         clearTimeout(helloTimer)
+        void redis.del(redisKeys.workerRejected(auth.id)).catch(() => undefined)
+        const capabilities = new Set(msg.capabilities ?? [])
         worker = {
           id: auth.id,
           publicId: auth.publicId,
@@ -148,7 +187,8 @@ export function createWorkerServer(options: WorkerServerOptions) {
           maxConcurrency: msg.maxConcurrency,
           reportedConcurrency: msg.maxConcurrency,
           concurrencyLimit: auth.concurrencyLimit,
-          configurable: msg.capabilities?.includes(WORKER_CAPABILITY.configure) === true,
+          configurable: capabilities.has(WORKER_CAPABILITY.configure),
+          outdated: WORKER_CAPABILITIES.some((c) => !capabilities.has(c)),
           version: msg.workerVersion,
           pending: new Map(),
           failures: 0,

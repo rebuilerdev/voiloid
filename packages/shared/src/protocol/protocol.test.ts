@@ -47,6 +47,13 @@ describe("workerMessageSchema", () => {
     expect(workerMessageSchema.parse(hello)).toEqual(hello)
   })
 
+  it("この版が知らないエンジン（新しい Worker が対応したもの）は、エラーにせず除く", () => {
+    const voicevox = { engine: "VOICEVOX", healthy: true, speakers: [] }
+    expect(
+      workerMessageSchema.parse({ type: "engines", engines: [{ engine: "x", healthy: true, speakers: [] }, voicevox] }),
+    ).toEqual({ type: "engines", engines: [voicevox] })
+  })
+
   it("成功・失敗の result を受け付ける", () => {
     expect(workerMessageSchema.parse({ type: "result", jobId, ok: true, audio: "UklGRg==" })).toMatchObject({
       ok: true,
@@ -56,7 +63,6 @@ describe("workerMessageSchema", () => {
 
   it.each([
     ["未知の type", { type: "unknown" }],
-    ["未知のエンジン", { type: "engines", engines: [{ engine: "x", healthy: true, speakers: [] }] }],
     ["jobId が UUID でない", { type: "result", jobId: "1", ok: true, audio: "a" }],
     ["同時実行数 0", { type: "hello", protocolVersion: 1, workerVersion: "1", maxConcurrency: 0, engines: [] }],
   ])("%s は拒否する", (_label, value) => {

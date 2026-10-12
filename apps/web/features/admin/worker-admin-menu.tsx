@@ -37,7 +37,6 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { WORKER_CONTROL_SERVER } from "@/lib/config"
 import { fmt } from "@/lib/i18n/config"
 import {
   deleteAdminWorker,
@@ -51,13 +50,6 @@ import type { AdminWorker, AdminWorkerConnection } from "@/types/admin"
 import { WORKER_NAME_LENGTH } from "@/types/worker"
 
 import { runAction } from "@/features/admin/run-action"
-
-/** 公式Worker を動かすマシンに設定する環境変数 */
-export function officialSetupEnv(token: string, engines: string[]) {
-  return [`CONTROL_SERVER=${WORKER_CONTROL_SERVER}`, `WORKER_TOKEN=${token}`, `WORKER_ENGINES=${engines.join(",")}`].join(
-    "\n"
-  )
-}
 
 export const validWorkerName = (name: string) =>
   name.trim().length >= WORKER_NAME_LENGTH.min && name.trim().length <= WORKER_NAME_LENGTH.max
@@ -231,12 +223,7 @@ export function WorkerAdminMenu({
                 </DialogDescription>
               </DialogHeader>
               <CodeBlock code={token} />
-              {official && (
-                <>
-                  <p className="text-muted-foreground">{t.admin.setupHint}</p>
-                  <CodeBlock label=".env" code={officialSetupEnv(token, worker.engines.map((e) => e.engine))} />
-                </>
-              )}
+              <p className="text-muted-foreground">{t.admin.setupHint}</p>
               <DialogFooter>
                 <Button
                   onClick={() => {

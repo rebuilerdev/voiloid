@@ -114,9 +114,10 @@ export function createAdminService(deps: AppDeps, live: LiveService, operators: 
   }
 
   async function toAdminWorkers(rows: AdminWorkerRow[]): Promise<AdminWorker[]> {
-    const states = await live.workers(rows.map((w) => w.id))
+    const ids = rows.map((w) => w.id)
+    const [states, rejected] = await Promise.all([live.workers(ids), live.rejectedWorkers(ids)])
     return rows.map((w) => ({
-      ...toApiWorker(w, states.get(w.id)),
+      ...toApiWorker(w, states.get(w.id), rejected.has(w.id)),
       enabled: w.enabled,
       owner: w.owner ? { id: w.owner.discordUserId, name: displayName(w.owner) } : null,
       connections: w._count?.guildPermissions ?? 0,

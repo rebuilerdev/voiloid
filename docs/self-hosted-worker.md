@@ -7,7 +7,8 @@
 - [3. 登録して起動する](#3-登録して起動する)
 - [4. サーバーに接続する](#4-サーバーに接続する)
 - [5. 管理する（名前・トークン・削除）](#5-管理する名前トークン削除)
-- [6. 困ったとき](#6-困ったとき)
+- [6. 更新する](#6-更新する)
+- [7. 困ったとき](#7-困ったとき)
 
 ---
 
@@ -31,16 +32,16 @@ Voiloid の音声は **Worker** が作ります。Worker には 2 種類あり�
 
 ## 2. 用意するもの
 
-1. **Docker**（Windows・Mac は Docker Desktop、Linux は Docker Engine）
-2. **音声合成ソフト**を同じ PC で起動しておく
+1. **Docker**（Windows・Mac は Docker Desktop、Linux は Docker Engine）。Raspberry Pi などの arm64 の機器でも動きます
+2. 読み上げに使う間、PC を起動したままにしておく
 
-| エンジン | 起動するもの | 使うポート |
+音声合成ソフト（エンジン）は、**Docker Compose・Docker で起動する場合は Worker と一緒に起動します**（自分で入れる必要はありません。初回はダウンロードに数分かかります）。
+
+| エンジン | 一緒に起動するイメージ | 自分で起動する場合のポート |
 |---|---|---|
-| VOICEVOX | VOICEVOX（アプリ、またはエンジン） | 50021 |
-| AivisSpeech | AivisSpeech（アプリ、またはエンジン） | 10101 |
-| COEIROINK | COEIROINK | 50032 |
-
-3. 読み上げに使う間、PC を起動したままにしておく
+| VOICEVOX | `voicevox/voicevox_engine:cpu-latest` | 50021 |
+| AivisSpeech | `ghcr.io/aivis-project/aivisspeech-engine:cpu-latest` | 10101 |
+| COEIROINK | なし（公式の Docker イメージがないため、COEIROINK を同じ PC で起動しておく） | 50032 |
 
 1 人が登録できる自鯖Worker の数には上限があります（既定は 10 台）。
 
@@ -60,7 +61,8 @@ Voiloid の音声は **Worker** が作ります。Worker には 2 種類あり�
 5. 起動したら「起動したので接続を確認」を押す
 6. 「Workerが接続されました」と表示されれば完了です
 
-Worker は、同じ PC の音声合成ソフトに `host.docker.internal` という名前で接続します。音声合成ソフトを先に起動しておいてください。
+- Docker Compose・Docker の場合、Worker は一緒に起動したエンジンのコンテナに、`voicevox`・`aivisspeech` という名前で接続します
+- 環境変数の場合と COEIROINK は、同じ PC で動いている音声合成ソフトに `host.docker.internal` という名前で接続します。音声合成ソフトを先に起動しておいてください
 
 ---
 
@@ -96,7 +98,22 @@ Worker の詳細ページでできること:
 
 ---
 
-## 6. 困ったとき
+## 6. 更新する
+
+Worker の新しいバージョンが出ると、Worker の一覧と詳細ページに **「更新あり」** と表示されます。`compose.yaml` のあるフォルダで、次のコマンドを実行してください。
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+- 「更新あり」の Worker も、そのまま読み上げに使えます。更新すると、新しい機能（Web からの同時処理の数の変更など）が使えるようになります
+- サービス側の大きな変更で古い Worker が使えなくなった場合は、**「要更新」** と表示され、Worker は接続できなくなります（Worker のログには `pull the latest image` と出ます）。同じコマンドで更新してください
+- Docker で起動した場合は、`docker pull <イメージ>` のあと、コンテナを削除して同じコマンドで起動し直します
+
+---
+
+## 7. 困ったとき
 
 **「Workerの接続を待っています…」のまま進まない**
 - Worker のコンテナが起動しているか確認します: `docker ps`
@@ -109,7 +126,8 @@ Worker の詳細ページでできること:
 PC がスリープした、Docker が止まった、ネットワークが切れた、などが考えられます。Worker は自動で接続し直します。
 
 **エンジンが「Unhealthy」になる**
-- 音声合成ソフトが起動しているか確認してください
+- Docker Compose の場合は、エンジンのコンテナが起動しているか確認してください: `docker compose ps`。`compose.yaml` にエンジン（`voicevox` など）が無い場合は、Web コンソールで表示された最新の `compose.yaml` に置き換えるか、自分で音声合成ソフトを起動してください
+- 自分で起動している場合は、音声合成ソフトが起動しているか確認してください
 - ポート番号（VOICEVOX は 50021 など）を変えている場合は、`VOICEVOX_URL` などの環境変数を合わせてください
 - 初回の起動直後は、モデルの読み込みに 1〜2 分かかることがあります
 

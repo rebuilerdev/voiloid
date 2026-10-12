@@ -230,6 +230,29 @@ describe("createWorkerClient", () => {
     expect(gateway.authorizations).toHaveLength(1)
     await until(() => gateway!.authorizations.length === 2, 3000)
   })
+
+  it("Gateway が対応していないバージョンだと言って切断した場合も、長めに待ってから再接続する", async () => {
+    gateway = await startFakeGateway()
+    start([adapter()])
+    await until(() => gateway!.sockets.length === 1)
+    const closedAt = Date.now()
+    gateway.sockets[0]?.close(WORKER_CLOSE.UNSUPPORTED_PROTOCOL)
+    await until(() => gateway!.sockets.length === 2, 3000)
+    expect(Date.now() - closedAt).toBeGreaterThanOrEqual(300)
+  })
+
+  it("新しい Gateway が送る、知らない種類のメッセージ・知らない項目は無視して動き続ける", async () => {
+    gateway = await startFakeGateway()
+    const c = start([adapter()])
+    await until(() => gateway!.messages.length === 1)
+    gateway.send({ type: "welcome", workerId: "w", name: "n", heartbeatIntervalMs: 1000, future: true })
+    await until(() => c.connected)
+    gateway.send({ type: "future-message", value: 1 })
+    gateway.send(job({ future: "field" }))
+    await until(() => gateway!.messages.length === 2)
+    expect(gateway.messages[1]).toMatchObject({ type: "result", ok: true })
+    expect(gateway.sockets).toHaveLength(1)
+  })
 })
 
 describe("createLimiter", () => {

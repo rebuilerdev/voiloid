@@ -12,7 +12,15 @@ beforeEach(async () => {
 })
 afterAll(() => teardown())
 
-type ApiWorker = { id: string; name: string; type: string; status: string; runningJobs: number; engines: unknown[] }
+type ApiWorker = {
+  id: string
+  name: string
+  type: string
+  status: string
+  runningJobs: number
+  engines: unknown[]
+  update?: string
+}
 
 async function createWorker(user: Awaited<ReturnType<typeof login>>, name = "home", engines = ["VOICEVOX"]) {
   const res = await call(h, "POST", "/api/workers", { user, body: { name, engines } })
@@ -76,6 +84,28 @@ describe("Worker の登録・取得", () => {
       queue: 1,
       latency: 15,
     })
+  })
+
+  it("古い Worker は更新を案内する（できることが足りない = available、接続を断られた = required）", async () => {
+    const user = await login(h)
+    const { worker } = await createWorker(user)
+    const row = await h.db.worker.findFirstOrThrow({ where: { publicId: worker.id } })
+    const get = async () => (await call(h, "GET", `/api/workers/${worker.id}`, { user })).data() as ApiWorker
+    expect((await get()).update).toBeUndefined()
+
+    await h.redis.set(
+      redisKeys.workerRejected(row.id),
+      JSON.stringify({ protocolVersion: 0, workerVersion: "0.9.0", at: new Date().toISOString() }),
+    )
+    expect(await get()).toMatchObject({ status: "error", update: "required" })
+
+    await h.redis.del(redisKeys.workerRejected(row.id))
+    const live = { status: "online", runningJobs: 0, queue: 0, maxConcurrency: 2, lastSeenAt: new Date().toISOString() }
+    await h.redis.set(redisKeys.workerLive(row.id), JSON.stringify({ ...live, outdated: true }))
+    expect(await get()).toMatchObject({ status: "online", update: "available" })
+
+    await h.redis.set(redisKeys.workerLive(row.id), JSON.stringify({ ...live, outdated: false }))
+    expect((await get()).update).toBeUndefined()
   })
 
   it.each([

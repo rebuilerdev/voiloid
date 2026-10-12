@@ -45,6 +45,9 @@ export type MockWorker = {
   restricted?: boolean
   /** Web で設定した同時処理の数（無ければ Worker の申告。maxConcurrency は Worker の申告） */
   concurrencyLimit?: number
+  /** Worker のバージョンと、更新の案内（古い Worker） */
+  version?: string
+  update?: "available" | "required"
 }
 
 export const user: CurrentUser = {
@@ -187,6 +190,7 @@ function buildOfficialWorkers(): MockWorker[] {
         lastSeenSecondsAgo: down ? 2700 : 2,
         createdAt: "2026-06-01T00:00:00+09:00",
         connections: {},
+        version: "1.0.0",
       }
     })
   )
@@ -207,6 +211,9 @@ export function buildWorkers(): MockWorker[] {
       queue: 0,
       lastSeenSecondsAgo: 3,
       createdAt: "2026-09-12T20:14:00+09:00",
+      // 古い Worker（更新すると使える機能がある）
+      version: "0.9.0",
+      update: "available",
       connections: { "1029384756": "server", "1122334455": "server", "8800112233": "personal" },
     },
     {
@@ -220,6 +227,7 @@ export function buildWorkers(): MockWorker[] {
       queue: 0,
       lastSeenSecondsAgo: 1860,
       createdAt: "2026-08-03T11:02:00+09:00",
+      version: "1.0.0",
       connections: { "1029384756": "server" },
     },
   ]

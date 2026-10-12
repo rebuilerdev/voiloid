@@ -5,6 +5,7 @@ import {
   guildSessionSchema,
   redisKeys,
   workerLiveSchema,
+  workerRejectedSchema,
   type GuildSessionState,
   type Invalidation,
   type WorkerLive,
@@ -39,6 +40,13 @@ export function createLiveService(redis: Redis, now: () => Date) {
           return live ? [[id, live] as const] : []
         }),
       )
+    },
+
+    /** プロトコルのバージョンが古くて、Gateway が接続を断った Worker（内部 ID） */
+    async rejectedWorkers(workerIds: string[]): Promise<Set<string>> {
+      if (workerIds.length === 0) return new Set()
+      const values = await redis.mget(workerIds.map((id) => redisKeys.workerRejected(id)))
+      return new Set(workerIds.filter((_id, i) => parse(workerRejectedSchema, values[i]) !== null))
     },
 
     /** サーバーの読み上げセッション（Discord Guild ID ごと） */
