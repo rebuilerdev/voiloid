@@ -30,6 +30,29 @@ export function registerServerTransport(transport: ServerTransport) {
   globalForTransport.__voiloidServerTransport = transport
 }
 
+type MutationListener = () => void
+
+const mutationListeners = new Set<MutationListener>()
+
+/**
+ * ブラウザからの更新（GET 以外）が成功したときに呼ぶ処理を登録する。
+ * components/providers.tsx が、Next.js の Client Cache を捨てる処理（router.refresh）を登録する。
+ * 返り値で登録を解除する
+ */
+export function onApiMutation(listener: MutationListener) {
+  mutationListeners.add(listener)
+  return () => {
+    mutationListeners.delete(listener)
+  }
+}
+
+function notifyMutation() {
+  // 呼び出し元が続けて router.push などで移動するのを待ってから、移動先の画面で作り直す
+  setTimeout(() => {
+    for (const listener of mutationListeners) listener()
+  }, 0)
+}
+
 async function browserTransport(method: HttpMethod, path: string, body?: unknown): Promise<RawResponse> {
   try {
     const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -43,6 +66,7 @@ async function browserTransport(method: HttpMethod, path: string, body?: unknown
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = `/api/auth/session-expired?next=${encodeURIComponent(window.location.pathname)}`
     }
+    if (method !== "GET" && res.ok) notifyMutation()
     return { status: res.status, body: await res.json().catch(() => null) }
   } catch {
     return {

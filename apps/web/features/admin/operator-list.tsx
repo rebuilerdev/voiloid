@@ -23,6 +23,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useSyncedState } from "@/hooks/use-synced-state"
 import { fmt } from "@/lib/i18n/config"
 import { addOperator, listOperators, removeOperator, updateOperator } from "@/services/admin"
 import { canOperate, type OperatorEntry, type OperatorLevel, type OperatorRole } from "@/types/admin"
@@ -43,7 +44,7 @@ export function OperatorList({
   currentUserId: string
 }) {
   const { t, f } = useI18n()
-  const [operators, setOperators] = useState(initial)
+  const [operators, setOperators] = useSyncedState(initial)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<OperatorEntry | null>(null)
   const canAdmin = canOperate(role, "admin")

@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useContext, useMemo } from "react"
+import { createContext, useContext, useEffect, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { ThemeProvider } from "next-themes"
 
 import { Toaster } from "@/components/ui/sonner"
@@ -8,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { createFormatters, type Formatters } from "@/lib/format"
 import type { Locale } from "@/lib/i18n/config"
 import type { Dictionary } from "@/lib/i18n/dictionaries"
+import { onApiMutation } from "@/services/http"
 
 type I18nContextValue = { locale: Locale; t: Dictionary; f: Formatters }
 
@@ -29,6 +31,11 @@ export function Providers({
   dictionary: Dictionary
   children: React.ReactNode
 }) {
+  const router = useRouter()
+  // 保存・削除などが成功したら、Client Cache（一度開いたページの表示）を捨てて作り直す。
+  // 捨てないと、別のページへ移って戻ったときに、最大5分前の内容が出る
+  useEffect(() => onApiMutation(() => router.refresh()), [router])
+
   const i18n = useMemo(
     () => ({ locale, t: dictionary, f: createFormatters(locale) }),
     [locale, dictionary]

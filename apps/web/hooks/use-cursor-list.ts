@@ -23,6 +23,23 @@ export function useCursorList<T, F>(
   const loadRef = useRef(load)
   const key = JSON.stringify(filter)
   const first = useRef(true)
+  // サーバーが一覧を読み込んだときの検索条件
+  const [serverFilter] = useState(key)
+  const [reload, setReload] = useState(0)
+
+  // サーバーから新しい一覧が届いたら（別のページから戻ったときなど）、表示を置き換える。
+  // 検索条件を変えているときは、その条件で読み直す
+  const [synced, setSynced] = useState(() => JSON.stringify(initial))
+  const initialKey = JSON.stringify(initial)
+  if (initialKey !== synced) {
+    setSynced(initialKey)
+    if (key === serverFilter) {
+      setItems(initial.items)
+      setNextCursor(initial.nextCursor)
+    } else {
+      setReload((n) => n + 1)
+    }
+  }
 
   useEffect(() => {
     loadRef.current = load
@@ -52,7 +69,7 @@ export function useCursorList<T, F>(
       cancelled = true
       clearTimeout(timer)
     }
-  }, [key, debounceMs, t])
+  }, [key, debounceMs, t, reload])
 
   async function loadMore() {
     if (!nextCursor || loading) return

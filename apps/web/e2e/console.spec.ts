@@ -92,6 +92,27 @@ test("自鯖Worker の所有者も、同時処理の数を設定できる", asyn
   expect(errors).toEqual([])
 })
 
+test("保存したあと別のページへ移っても、古い内容を表示しない", async ({ page }) => {
+  const errors = trackErrors(page)
+  await login(page, "/workers")
+  const card = () => page.locator("[data-slot=card]").filter({ hasText: "gaming-pc" })
+  // ほかのテストで値が変わっていることがあるので、今と違う値にする
+  const before = (await card().textContent())?.match(/\/ (\d+)/)?.[1]
+  const next = before === "2" ? "3" : "2"
+  // 一覧から移動する（一覧は Client Cache に残る）
+  await card().getByRole("link", { name: "gaming-pc" }).click()
+  await page.waitForURL("**/workers/wrk_01HGAMINGPC")
+  const input = page.getByRole("spinbutton", { name: "同時処理の数（1〜64）" }).filter({ visible: true })
+  await input.fill(next)
+  await page.locator("form").filter({ has: input }).getByRole("button", { name: "保存" }).click()
+  await expect(page.getByText(`同時処理の数を ${next} にしました`)).toBeVisible()
+  // 再読み込みせずに一覧へ戻る
+  await page.locator("[data-sidebar=sidebar]").getByRole("link", { name: "Workers", exact: true }).first().click()
+  await page.waitForURL("**/workers")
+  await expect(card()).toContainText(`/ ${next}`)
+  expect(errors).toEqual([])
+})
+
 test("主要なページがエラーなく表示される", async ({ page }) => {
   const errors = trackErrors(page)
   await login(page)

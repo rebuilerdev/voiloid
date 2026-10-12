@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 
+import { useSyncedState } from "@/hooks/use-synced-state"
 import { WORKER_POLL_INTERVAL_MS } from "@/lib/config"
 
 /**
@@ -13,7 +14,7 @@ export function usePolling<T>(
   initial: T,
   { intervalMs = WORKER_POLL_INTERVAL_MS, immediate = false }: { intervalMs?: number; immediate?: boolean } = {}
 ) {
-  const [data, setData] = useState(initial)
+  const [data, setData] = useSyncedState(initial)
   const fetcherRef = useRef(fetcher)
 
   useEffect(() => {
@@ -37,7 +38,7 @@ export function usePolling<T>(
       cancelled = true
       clearInterval(id)
     }
-  }, [intervalMs, immediate])
+  }, [intervalMs, immediate, setData])
 
   return [data, setData] as const
 }

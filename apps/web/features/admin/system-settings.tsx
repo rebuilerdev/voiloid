@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { useSettingsForm } from "@/hooks/use-settings-form"
+import { useSyncedState } from "@/hooks/use-synced-state"
 import { registerCommands, updateSystemSettings } from "@/services/admin"
 import {
   canOperate,
@@ -70,7 +71,7 @@ export function SystemSettings({
 }) {
   const { t } = useI18n()
   const canAdmin = canOperate(role, "admin")
-  const [view, setView] = useState(initial)
+  const [view, setView] = useSyncedState(initial)
   const form = useSettingsForm<Values>(
     toValues(initial),
     async (v) => {

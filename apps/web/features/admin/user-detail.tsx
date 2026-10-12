@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useSyncedState } from "@/hooks/use-synced-state"
 import { fmt } from "@/lib/i18n/config"
 import {
   deleteAdminUser,
@@ -52,7 +53,7 @@ export function UserDetail({
 }) {
   const { t, f } = useI18n()
   const router = useRouter()
-  const [user, setUser] = useState(initial)
+  const [user, setUser] = useSyncedState(initial)
   const [dialog, setDialog] = useState<Dialogs>(null)
   const close = () => setDialog(null)
   const canEdit = canOperate(role, "editor")

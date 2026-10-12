@@ -27,6 +27,16 @@ export function useSettingsForm<T>(
   const dirty = JSON.stringify(saved) !== JSON.stringify(values)
   useRegisterDirty(key, dirty)
 
+  // サーバーから新しい値が届いたら（別のページから戻ったときなど）、保存済みの値を置き換える。
+  // 編集中の値は、変更していないときだけ置き換える
+  const [synced, setSynced] = useState(() => JSON.stringify(initial))
+  const initialKey = JSON.stringify(initial)
+  if (initialKey !== synced) {
+    setSynced(initialKey)
+    setSaved(initial)
+    if (!dirty) setValues(initial)
+  }
+
   function set<K extends keyof T>(field: K, value: T[K]) {
     setValues((v) => ({ ...v, [field]: value }))
   }

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { useI18n } from "@/components/providers"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
+import { useSyncedState } from "@/hooks/use-synced-state"
 import { fmt } from "@/lib/i18n/config"
 import { updateGuildSettings } from "@/services/guilds"
 import { SELECTABLE_ENGINES } from "@/types/worker"
@@ -31,7 +32,7 @@ export function GuildEngineSettings({
 }) {
   const { t } = useI18n()
   const router = useRouter()
-  const [disabled, setDisabled] = useState(disabledEngines)
+  const [disabled, setDisabled] = useSyncedState(disabledEngines)
   const [pending, setPending] = useState<string | null>(null)
 
   async function toggle(engine: string, on: boolean) {

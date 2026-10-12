@@ -36,6 +36,16 @@ export function WorkerGuildConnections({
   const dirty = initial.some((g) => saved[g.guildId] !== scopes[g.guildId])
   useRegisterDirty(key, dirty)
 
+  // サーバーから新しい値が届いたら（別のページから戻ったときなど）、保存済みの値を置き換える。
+  // 編集中の値は、変更していないときだけ置き換える
+  const [synced, setSynced] = useState(() => JSON.stringify(initial))
+  const initialKey = JSON.stringify(initial)
+  if (initialKey !== synced) {
+    setSynced(initialKey)
+    setSaved(toScopes(initial))
+    if (!dirty) setScopes(toScopes(initial))
+  }
+
   const managed = initial.filter((g) => g.canManage)
   const memberOnly = initial.filter((g) => !g.canManage)
 

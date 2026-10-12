@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/common/empty-state"
 import { useI18n } from "@/components/providers"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { useSyncedState } from "@/hooks/use-synced-state"
 import { fmt } from "@/lib/i18n/config"
 import {
   createDictionaryEntry,
@@ -25,7 +26,7 @@ import { DictionaryTable } from "@/features/dictionary/dictionary-table"
 /** Dictionary（仕様書 §20〜23） */
 export function DictionaryManager({ guildId, initial }: { guildId: string; initial: DictionaryEntry[] }) {
   const { t } = useI18n()
-  const [entries, setEntries] = useState(initial)
+  const [entries, setEntries] = useSyncedState(initial)
   const [query, setQuery] = useState("")
   const [dialog, setDialog] = useState<DictionaryDialogState>(null)
   const [deleting, setDeleting] = useState<DictionaryEntry | null>(null)
