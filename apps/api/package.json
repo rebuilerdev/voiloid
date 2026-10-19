@@ -16,6 +16,6 @@
     "@voiloid/shared": "*",
     "fastify": "5.12.5",
     "ioredis": "6.0.0",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   }
 }
