@@ -1,7 +1,7 @@
 /**
  * サーバーごとの Bot プロフィール（Discord: Modify Current Member）。
  * 入力 Validation → 画像 Upload → Discord API → 成功 → DB Transaction の順で行い、
- * Discord への反映に失敗した場合は DB を更新しない。確定後、サブボットへの反映を Bot に指示する。
+ * Discord への反映に失敗した場合は DB を更新しない。確定後、差し替えた前の画像を削除し、サブボットへの反映を Bot に指示する。
  */
 import { randomUUID } from "node:crypto"
 
@@ -103,7 +103,7 @@ export function createBotProfileService(deps: AppDeps, access: AccessService) {
       }
 
       // 3. 成功した内容だけを DB に確定する
-      const saved = await commitBotProfile(
+      const { profile: saved, previousAvatarObjectKey } = await commitBotProfile(
         deps.db,
         guild.id,
         {
@@ -115,7 +115,12 @@ export function createBotProfileService(deps: AppDeps, access: AccessService) {
         asOperator ? { asOperator: true } : undefined,
       )
 
-      // 4. サブボットにも同じプロフィールを反映する（サブボットのトークンを持つ Bot に指示する。結果は待たない）
+      // 4. 画像を差し替えた・既定に戻したら、前の画像を削除する（失敗してもプロフィールの変更は成功のまま）
+      if (objectKey !== undefined && previousAvatarObjectKey && previousAvatarObjectKey !== objectKey) {
+        await deps.storage.delete(previousAvatarObjectKey).catch(() => undefined)
+      }
+
+      // 5. サブボットにも同じプロフィールを反映する（サブボットのトークンを持つ Bot に指示する。結果は待たない）
       const command: BotCommand = { kind: "sync-profile", id: randomUUID(), guildId: discordGuildId }
       await deps.redis.publish(redisKeys.botCommands(), JSON.stringify(command)).catch(() => 0)
       return toApi(discordGuildId, saved)
