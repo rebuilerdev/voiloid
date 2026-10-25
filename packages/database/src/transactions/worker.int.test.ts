@@ -338,25 +338,30 @@ describe("commitBotProfile", () => {
   it("プロフィールと監査ログを同じ Transaction で保存し、画像データを記録しない", async () => {
     const guild = await createTestGuild(db)
     const user = await createTestUser(db)
-    const profile = await commitBotProfile(
+    const { profile, previousAvatarObjectKey } = await commitBotProfile(
       db,
       guild.id,
       { nickname: "ずんだ", avatarObjectKey: "avatars/x.png", discordAvatarHash: "hash", updatedByUserId: user.id },
       "iphash",
     )
     expect(profile).toMatchObject({ nickname: "ずんだ", discordAvatarHash: "hash" })
+    expect(previousAvatarObjectKey).toBeNull()
     const audit = await db.auditLog.findFirstOrThrow({ where: { action: "guild.bot_profile.update" } })
     expect(audit).toMatchObject({ guildId: guild.id, actorUserId: user.id, ipHash: "iphash" })
     expect(audit.metadata).toEqual({ nickname: "changed", avatar: "changed" })
 
-    await commitBotProfile(db, guild.id, { nickname: null, updatedByUserId: user.id }, null)
+    const nameOnly = await commitBotProfile(db, guild.id, { nickname: null, updatedByUserId: user.id }, null)
+    expect(nameOnly.previousAvatarObjectKey).toBe("avatars/x.png")
+    expect(nameOnly.profile.avatarObjectKey).toBe("avatars/x.png")
     const latest = await db.auditLog.findFirstOrThrow({
       where: { action: "guild.bot_profile.update" },
       orderBy: { createdAt: "desc" },
     })
     expect(latest.metadata).toEqual({ nickname: "reset", avatar: "unchanged" })
 
-    await commitBotProfile(db, guild.id, { avatarObjectKey: null, updatedByUserId: user.id }, null)
+    const cleared = await commitBotProfile(db, guild.id, { avatarObjectKey: null, updatedByUserId: user.id }, null)
+    expect(cleared.previousAvatarObjectKey).toBe("avatars/x.png")
+    expect(cleared.profile.avatarObjectKey).toBeNull()
     const reset = await db.auditLog.findMany({
       where: { action: "guild.bot_profile.update" },
       orderBy: { createdAt: "asc" },

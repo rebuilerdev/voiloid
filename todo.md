@@ -408,3 +408,13 @@ Worker の同時処理の数は、今は Worker の環境変数 `MAX_CONCURRENCY
 - [x] gateway: 変えられる Worker は「Web の値（無ければ Worker の申告）」、古い Worker は「min(申告, Web の値)」。変えられる Worker には接続時・変更時に `configure` を送る
 - [x] api / web: 「同時処理の数」として表示・設定する。古い Worker には「大きくするには Worker を更新」と案内する。モック・ja / en・E2E
 - [x] テスト（worker・gateway）、docs。プロトコルのバージョンは上げない（古い Worker もそのまま接続できる）
+
+---
+
+# Bot プロフィール画像の差し替え時に古い画像を削除する（2026-10-25）
+
+原因: プロフィール画像を変更・既定に戻すと、新しい画像を `bot-avatars/<guildId>/<uuid>` に保存して DB の `avatarObjectKey` を差し替えるが、前の画像をストレージから削除していない。変更のたびに画像が溜まり容量を圧迫する。
+
+- [x] database: `commitBotProfile` が同じ Transaction で直前の `avatarObjectKey` を読み、確定後のプロフィールと一緒に返す
+- [x] api: 確定後、画像が変わった（差し替え・既定に戻す）ときは前の画像をストレージから削除する。削除の失敗はプロフィールの変更を失敗にしない（ログに残す）
+- [x] テスト（差し替えで前の画像が消える・既定に戻すと消える・名前だけの変更では消えない・削除に失敗しても 200・Discord 失敗時は前の画像を残す）、commitBotProfile の統合テスト

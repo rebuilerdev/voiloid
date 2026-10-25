@@ -209,6 +209,61 @@ describe("Bot プロフィール", () => {
     expect(await h.db.guildBotProfile.count()).toBe(0)
   })
 
+  it("画像を差し替えたら前の画像を削除し、名前だけの変更では残す", async () => {
+    const { guild, user } = await managedGuild()
+    const url = `/api/guilds/${guild.discordGuildId}/bot-profile`
+    await call(h, "PATCH", url, { user, body: { avatar: png } })
+    const [first] = [...h.storage.objects.keys()]
+
+    await call(h, "PATCH", url, { user, body: { nickname: "ずんだ" } })
+    expect([...h.storage.objects.keys()]).toEqual([first])
+
+    const other = `data:image/webp;base64,${Buffer.from("WEBPDATA").toString("base64")}`
+    expect((await call(h, "PATCH", url, { user, body: { avatar: other } })).statusCode).toBe(200)
+    const keys = [...h.storage.objects.keys()]
+    expect(keys).toHaveLength(1)
+    expect(keys[0]).not.toBe(first)
+    expect(keys[0]).toMatch(/\.webp$/)
+    expect((await h.db.guildBotProfile.findUniqueOrThrow({ where: { guildId: guild.id } })).avatarObjectKey).toBe(
+      keys[0],
+    )
+  })
+
+  it("既定に戻したら前の画像を削除する", async () => {
+    const { guild, user } = await managedGuild()
+    const url = `/api/guilds/${guild.discordGuildId}/bot-profile`
+    await call(h, "PATCH", url, { user, body: { avatar: png } })
+    expect(h.storage.objects.size).toBe(1)
+    expect((await call(h, "PATCH", url, { user, body: { avatar: null } })).statusCode).toBe(200)
+    expect(h.storage.objects.size).toBe(0)
+  })
+
+  it("差し替えが Discord で失敗したら前の画像を残す", async () => {
+    const { guild, user } = await managedGuild()
+    const url = `/api/guilds/${guild.discordGuildId}/bot-profile`
+    await call(h, "PATCH", url, { user, body: { avatar: png } })
+    const [first] = [...h.storage.objects.keys()]
+    h.discord.failNextMemberUpdate = new DiscordHttpError(500)
+    expect((await call(h, "PATCH", url, { user, body: { avatar: png } })).statusCode).not.toBe(200)
+    expect([...h.storage.objects.keys()]).toEqual([first])
+    expect((await h.db.guildBotProfile.findUniqueOrThrow({ where: { guildId: guild.id } })).avatarObjectKey).toBe(first)
+  })
+
+  it("前の画像の削除に失敗しても、プロフィールの変更は成功する", async () => {
+    const { guild, user } = await managedGuild()
+    const url = `/api/guilds/${guild.discordGuildId}/bot-profile`
+    await call(h, "PATCH", url, { user, body: { avatar: png } })
+    const remove = vi.spyOn(h.storage, "delete").mockRejectedValueOnce(new Error("S3 down"))
+    try {
+      const res = await call(h, "PATCH", url, { user, body: { nickname: "ずんだ", avatar: null } })
+      expect(res.statusCode).toBe(200)
+      expect(res.data()).toMatchObject({ nickname: "ずんだ", avatarUrl: null })
+      expect(remove).toHaveBeenCalledTimes(1)
+    } finally {
+      remove.mockRestore()
+    }
+  })
+
   it("既定に戻す（null）と、変更なしのリクエスト", async () => {
     const { guild, user } = await managedGuild()
     const url = `/api/guilds/${guild.discordGuildId}/bot-profile`

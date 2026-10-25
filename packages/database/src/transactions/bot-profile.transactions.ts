@@ -5,6 +5,7 @@ import { botProfileRepository, type BotProfileUpdate } from "../repositories/bot
 /**
  * Bot プロフィールの確定。Discord API への反映が成功した後にだけ呼ぶ。
  * 入力 Validation → 画像 Upload → Discord API → 成功 → この Transaction
+ * 差し替える前の画像のキー（previousAvatarObjectKey）も返す。呼び出し側が確定後にストレージから削除する。
  */
 export function commitBotProfile(
   db: Database,
@@ -14,6 +15,7 @@ export function commitBotProfile(
   extraMetadata?: Record<string, boolean | string>,
 ) {
   return db.$transaction(async (tx) => {
+    const previous = await botProfileRepository(tx).findByGuildId(guildId)
     const profile = await botProfileRepository(tx).upsert(guildId, update)
     await auditRepository(tx).record({
       actorUserId: update.updatedByUserId,
@@ -30,6 +32,6 @@ export function commitBotProfile(
       },
       ipHash,
     })
-    return profile
+    return { profile, previousAvatarObjectKey: previous?.avatarObjectKey ?? null }
   })
 }
