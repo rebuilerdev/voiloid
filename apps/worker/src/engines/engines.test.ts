@@ -19,6 +19,7 @@ describe("VOICEVOX 互換アダプタ", () => {
       speakers: [
         { id: "zunda-uuid", name: "ずんだもん", styles: [{ id: "3", name: "ノーマル" }] },
         { id: "legacy", name: "古い話者", styles: [{ id: "1", name: "ノーマル" }] },
+        { id: "metan-uuid", name: "四国めたん", styles: [{ id: "2", name: "ノーマル" }] },
       ],
     })
   })

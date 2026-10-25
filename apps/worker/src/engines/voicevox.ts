@@ -1,6 +1,6 @@
 /**
  * VOICEVOX ENGINE 互換 API（VOICEVOX / AivisSpeech）。
- * - 話者: GET /speakers（speaker_uuid と、talk 用のスタイル）
+ * - 話者: GET /speakers（speaker_uuid と、読み上げ用のスタイル）
  * - 合成: POST /audio_query → POST /synthesis
  */
 import type { EngineId } from "@voiloid/shared"
@@ -15,6 +15,12 @@ const speakersSchema = z.array(
     styles: z.array(z.object({ id: z.number(), name: z.string(), type: z.string().optional() })),
   }),
 )
+
+/**
+ * 歌唱用のスタイルの種類（読み上げに使えない）。読み上げ用は "talk"（0.26 から "streaming_talk"）だが、
+ * 種類が増えても声が消えないよう、読み上げ用を列挙せずに歌唱用だけを除く
+ */
+const SINGING_STYLE_TYPES = new Set(["sing", "singing_teacher", "frame_decode"])
 
 const audioQuerySchema = z.looseObject({
   speedScale: z.number(),
@@ -46,7 +52,7 @@ export function createVoicevoxAdapter(id: EngineId, baseUrl: string, fetchImpl: 
             name: s.name,
             // 歌唱用のスタイルは読み上げに使えない
             styles: s.styles
-              .filter((st) => (st.type ?? "talk") === "talk")
+              .filter((st) => !SINGING_STYLE_TYPES.has(st.type ?? "talk"))
               .map((st) => ({ id: String(st.id), name: st.name })),
           }))
           .filter((s) => s.styles.length > 0),

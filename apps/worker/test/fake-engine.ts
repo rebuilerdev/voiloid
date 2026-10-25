@@ -56,6 +56,17 @@ export async function startFakeEngine(kind: "voicevox" | "coeiroink"): Promise<F
             },
             { name: "歌手", speaker_uuid: "singer", styles: [{ id: 99, name: "歌", type: "frame_decode" }] },
             { name: "古い話者", speaker_uuid: "legacy", styles: [{ id: 1, name: "ノーマル" }] },
+            // VOICEVOX 0.26 以降の読み上げ用スタイル
+            {
+              name: "四国めたん",
+              speaker_uuid: "metan-uuid",
+              styles: [{ id: 2, name: "ノーマル", type: "streaming_talk" }],
+            },
+            {
+              name: "波音リツ",
+              speaker_uuid: "ritsu-uuid",
+              styles: [{ id: 6000, name: "ノーマル", type: "singing_teacher" }],
+            },
           ])
         }
         if (url.pathname === "/audio_query")
