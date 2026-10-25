@@ -41,7 +41,7 @@ test("公式Worker は、自鯖Worker と同じ手順の画面で追加し、エ
   await page.getByRole("button", { name: "次へ" }).click()
   await page.getByRole("button", { name: "Workerを作成" }).click()
   await expect(page.getByText(/WORKER_TOKEN: wkr_/)).toBeVisible()
-  await expect(page.getByText("voicevox/voicevox_engine:cpu-latest")).toBeVisible()
+  await expect(page.getByText("voicevox/voicevox_engine:cpu-0.26.0")).toBeVisible()
   await expect(page.getByText(/VOICEVOX_URL: http:\/\/voicevox:50021/)).toBeVisible()
   await page.getByRole("button", { name: "起動したので接続を確認" }).click()
   await page.getByRole("link", { name: "Workerを開く" }).click()

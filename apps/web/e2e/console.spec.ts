@@ -156,7 +156,7 @@ test("Worker の登録でトークンとセットアップ手順を表示する"
   await page.getByRole("button", { name: "Workerを作成" }).click()
   await expect(page.getByText("WORKER_TOKEN").first()).toBeVisible()
   // 選んだエンジン（VOICEVOX）のコンテナも一緒に起動し、Worker はサービス名で接続する
-  await expect(page.getByText("voicevox/voicevox_engine:cpu-latest")).toBeVisible()
+  await expect(page.getByText("voicevox/voicevox_engine:cpu-0.26.0")).toBeVisible()
   await expect(page.getByText(/VOICEVOX_URL: http:\/\/voicevox:50021/)).toBeVisible()
 })
 

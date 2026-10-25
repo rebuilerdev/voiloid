@@ -203,7 +203,7 @@ jobs:
         image: redis:7-alpine
         ports: ["6379:6379"]
       voicevox:
-        image: voicevox/voicevox_engine:cpu-latest
+        image: voicevox/voicevox_engine:cpu-0.26.0
         ports: ["50021:50021"]
     env:
       TEST_DATABASE_URL: postgresql://voiloid:voiloid@localhost:5432/voiloid_test

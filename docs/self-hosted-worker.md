@@ -39,8 +39,8 @@ Voiloid の音声は **Worker** が作ります。Worker には 2 種類あり�
 
 | エンジン | 一緒に起動するイメージ | 自分で起動する場合のポート |
 |---|---|---|
-| VOICEVOX | `voicevox/voicevox_engine:cpu-latest` | 50021 |
-| AivisSpeech | `ghcr.io/aivis-project/aivisspeech-engine:cpu-latest` | 10101 |
+| VOICEVOX | `voicevox/voicevox_engine:cpu-0.26.0` | 50021 |
+| AivisSpeech | `ghcr.io/aivis-project/aivisspeech-engine:cpu-1.2.0` | 10101 |
 | COEIROINK | なし（公式の Docker イメージがないため、COEIROINK を同じ PC で起動しておく） | 50032 |
 
 1 人が登録できる自鯖Worker の数には上限があります（既定は 10 台）。

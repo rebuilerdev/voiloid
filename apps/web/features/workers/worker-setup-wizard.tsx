@@ -36,10 +36,13 @@ const steps: Step[] = ["basic", "engine", "setup", "connection"]
 /** 接続確認のポーリング間隔 */
 const CONNECTION_POLL_MS = 3000
 
-/** 公式の Docker イメージがあるエンジン（Worker と一緒に起動する）。サービス名・イメージ・ポート */
+/**
+ * 公式の Docker イメージがあるエンジン（Worker と一緒に起動する）。サービス名・イメージ・ポート。
+ * イメージは latest ではなく、動作を確認したバージョンに固定する（ルートの compose.yaml と揃える）
+ */
 const ENGINE_CONTAINERS: Record<string, { service: string; image: string; port: number }> = {
-  VOICEVOX: { service: "voicevox", image: "voicevox/voicevox_engine:cpu-latest", port: 50021 },
-  AivisSpeech: { service: "aivisspeech", image: "ghcr.io/aivis-project/aivisspeech-engine:cpu-latest", port: 10101 },
+  VOICEVOX: { service: "voicevox", image: "voicevox/voicevox_engine:cpu-0.26.0", port: 50021 },
+  AivisSpeech: { service: "aivisspeech", image: "ghcr.io/aivis-project/aivisspeech-engine:cpu-1.2.0", port: 10101 },
 }
 
 /** エンジンの URL の環境変数と、同じマシンで別に動かす場合のポート */

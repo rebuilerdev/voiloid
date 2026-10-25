@@ -130,14 +130,16 @@ services:
       voicevox: { condition: service_started }
       aivisspeech: { condition: service_started }
 
+  # エンジンはバージョンを固定する（latest は API の変更が予告なく入るため。更新は Dependabot の PR で CI を通してから）
+  # 利用者向けのイメージ（apps/web/features/workers/worker-setup-wizard.tsx・docs/self-hosted-worker.md）も揃える
   voicevox:
-    image: voicevox/voicevox_engine:cpu-latest
+    image: voicevox/voicevox_engine:cpu-0.26.0
     restart: unless-stopped
     profiles: ["official-worker"]
 
   # 起動ではモデルを読み込むため、使えるようになるまで数分かかる（その間はエンジンが Unhealthy と表示される）
   aivisspeech:
-    image: ghcr.io/aivis-project/aivisspeech-engine:cpu-latest
+    image: ghcr.io/aivis-project/aivisspeech-engine:cpu-1.2.0
     restart: unless-stopped
     profiles: ["official-worker"]
 

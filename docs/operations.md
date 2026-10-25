@@ -178,7 +178,7 @@ Web コンソールのサイドバーの「運営」から使います。
 
 - `compose.yaml` にはトークンが書かれているので、`chmod 600 compose.yaml` にします
 - COEIROINK には公式の Docker イメージがありません。使う場合は、同じマシンで COEIROINK を起動しておきます
-- GPU があるマシンなら、`voicevox/voicevox_engine:nvidia-latest` に書き換えると速くなります（NVIDIA Container Toolkit が必要）
+- GPU があるマシンなら、`voicevox/voicevox_engine:nvidia-0.26.0` に書き換えると速くなります（NVIDIA Container Toolkit が必要）
 
 ### 5-2-1. Worker を更新する
 

@@ -28,3 +28,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # compose.yaml の音声エンジン（VOICEVOX・AivisSpeech）。更新したら worker-setup-wizard.tsx・ci.yml・docs も揃える
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
