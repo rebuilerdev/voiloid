@@ -5,9 +5,12 @@ import { dictionaryWordKey, type Repositories } from "@voiloid/database"
 import { DICTIONARY_LENGTH } from "@voiloid/shared"
 import type { Logger } from "pino"
 
+import { fmt, messages, type Locale } from "../i18n"
 import type { GuildConfigStore } from "./guild-config"
 import type { ServiceState } from "./service-state"
 import type { SessionManager } from "./sessions"
+import { groupVoices, voiceLabel } from "./speaker"
+import type { VoiceCatalog } from "./voice-catalog"
 
 export interface Reply {
   tone: "success" | "info" | "error"
@@ -25,14 +28,13 @@ export interface CommandContext {
   channelName: string
   /** 実行者が参加している VC */
   memberVoiceChannel: { id: string; name: string } | null
+  /** 返信の言語（実行者の Discord の言語） */
+  locale: Locale
 }
 
 const error = (description: string): Reply => ({ tone: "error", description, ephemeral: true })
 
 const channel = (id: string) => `<#${id}>`
-
-const SUSPENDED_GUILD = "このサーバーは運営者により利用停止されています。"
-const SUSPENDED_USER = "あなたのアカウントは運営者により利用停止されています。"
 
 export function createCommands(deps: {
   sessions: SessionManager
@@ -41,6 +43,8 @@ export function createCommands(deps: {
   repos: Repositories
   logger: Logger
   appOrigin: string
+  /** 声の一覧（/voice でキャラ名を表示するため） */
+  listVoices: VoiceCatalog
   /** このサーバーのこの VC に参加できる、空いている Bot（メインボットを優先） */
   pickBot: (guildId: string, voiceChannelId: string) => string | null
   /** チャンネル名（存在しなければ null） */
@@ -54,54 +58,48 @@ export function createCommands(deps: {
 
   /** 辞書を変更できるか（利用停止中のサーバー・ユーザーはできない） */
   async function editableGuild(ctx: CommandContext): Promise<{ id: string } | Reply> {
-    if (state.isUserSuspended(ctx.userId)) return error(SUSPENDED_USER)
+    const t = messages(ctx.locale)
+    if (state.isUserSuspended(ctx.userId)) return error(t.errors.suspendedUser)
     const config = await configs.get(ctx.guildId)
-    if (!config) return error("このサーバーの設定を読み込めませんでした。")
-    if (config.suspended) return error(SUSPENDED_GUILD)
+    if (!config) return error(t.errors.configUnavailable)
+    if (config.suspended) return error(t.errors.suspendedGuild)
     return { id: config.guildId }
   }
 
   return {
     async join(ctx: CommandContext): Promise<Reply> {
-      if (state.isUserSuspended(ctx.userId)) return error(SUSPENDED_USER)
-      if (state.readingPaused()) {
-        return error("現在、運営者により読み上げが一時停止されています。しばらくしてから再度お試しください。")
-      }
+      const t = messages(ctx.locale)
+      if (state.isUserSuspended(ctx.userId)) return error(t.errors.suspendedUser)
+      if (state.readingPaused()) return error(t.join.paused)
       const config = await configs.get(ctx.guildId)
-      if (!config) return error("このサーバーの設定を読み込めませんでした。しばらくしてから再度お試しください。")
-      if (config.suspended) return error(SUSPENDED_GUILD)
+      if (!config) return error(t.join.configUnavailable)
+      if (config.suspended) return error(t.errors.suspendedGuild)
 
       // チャンネル固定モードは設定されたチャンネル、コマンドモードは実行者の VC と実行したチャンネル
       let target: { voice: { id: string; name: string }; text: { id: string; name: string } }
       if (config.readingMode === "fixed" && config.textChannelId && config.voiceChannelId) {
         const voiceName = deps.channelName(ctx.guildId, config.voiceChannelId)
         const textName = deps.channelName(ctx.guildId, config.textChannelId)
-        if (!voiceName || !textName)
-          return error("設定された読み上げチャンネルが見つかりません。Web の設定を確認してください。")
+        if (!voiceName || !textName) return error(t.join.fixedChannelMissing)
         target = {
           voice: { id: config.voiceChannelId, name: voiceName },
           text: { id: config.textChannelId, name: textName },
         }
       } else {
-        if (!ctx.memberVoiceChannel) return error("先にボイスチャンネルに参加してください。")
+        if (!ctx.memberVoiceChannel) return error(t.join.notInVoice)
         target = { voice: ctx.memberVoiceChannel, text: { id: ctx.channelId, name: ctx.channelName } }
       }
 
       const existing = sessions.byVoiceChannel(target.voice.id)
       if (existing) {
-        return error(`${channel(target.voice.id)} では既に <@${existing.info.botUserId}> が読み上げ中です。`)
+        return error(fmt(t.join.voiceBusy, { channel: channel(target.voice.id), bot: `<@${existing.info.botUserId}>` }))
       }
       if (sessions.byTextChannel(target.text.id)) {
-        return error(`${channel(target.text.id)} は既に別のボイスチャンネルで読み上げ中です。`)
+        return error(fmt(t.join.textBusy, { channel: channel(target.text.id) }))
       }
 
       const botUserId = deps.pickBot(ctx.guildId, target.voice.id)
-      if (!botUserId) {
-        return error(
-          "参加できる読み上げ Bot がいません。Bot にボイスチャンネルの接続・発言権限があるか確認してください。" +
-            "同じサーバーで同時に読み上げられる VC の数は、導入されている Bot の数までです。",
-        )
-      }
+      if (!botUserId) return error(t.join.noBot)
 
       let session
       try {
@@ -118,51 +116,54 @@ export function createCommands(deps: {
         )
       } catch (err) {
         deps.logger.warn({ err, guild: ctx.guildId }, "failed to join the voice channel")
-        return error("ボイスチャンネルへの接続に失敗しました。")
+        return error(t.join.connectFailed)
       }
       session.enqueue("接続しました", null)
       return {
         tone: "success",
-        title: "読み上げを開始しました",
-        description: `${channel(target.text.id)} の発言を読み上げます。`,
+        title: t.join.title,
+        description: fmt(t.join.description, { channel: channel(target.text.id) }),
         fields: [
-          { name: "ボイスチャンネル", value: channel(target.voice.id) },
-          { name: "担当 Bot", value: `<@${botUserId}>` },
+          { name: t.join.voiceChannel, value: channel(target.voice.id) },
+          { name: t.join.bot, value: `<@${botUserId}>` },
         ],
       }
     },
 
     async leave(ctx: CommandContext): Promise<Reply> {
+      const t = messages(ctx.locale)
       const session =
         (ctx.memberVoiceChannel && sessions.byVoiceChannel(ctx.memberVoiceChannel.id)) ??
         sessions.byTextChannel(ctx.channelId)
-      if (!session) return error("読み上げ中のボイスチャンネルが見つかりません。")
+      if (!session) return error(t.leave.notReading)
       const voiceChannelId = session.info.voiceChannelId
       await sessions.stop(session, "leave_command")
       return {
         tone: "info",
-        title: "読み上げを終了しました",
-        description: `${channel(voiceChannelId)} から退出しました。`,
+        title: t.leave.title,
+        description: fmt(t.leave.description, { channel: channel(voiceChannelId) }),
       }
     },
 
     skip(ctx: CommandContext): Reply {
+      const t = messages(ctx.locale)
       const session =
         (ctx.memberVoiceChannel && sessions.byVoiceChannel(ctx.memberVoiceChannel.id)) ??
         sessions.byTextChannel(ctx.channelId)
-      if (!session) return error("読み上げ中のボイスチャンネルが見つかりません。")
+      if (!session) return error(t.leave.notReading)
       session.clear()
-      return { tone: "info", description: "読み上げ中のメッセージをスキップしました。", ephemeral: true }
+      return { tone: "info", description: t.skip.done, ephemeral: true }
     },
 
     async dictAdd(ctx: CommandContext, rawWord: string, rawReading: string): Promise<Reply> {
+      const t = messages(ctx.locale)
       const word = rawWord.trim()
       const reading = rawReading.trim()
       if (word.length < DICTIONARY_LENGTH.word.min || word.length > DICTIONARY_LENGTH.word.max) {
-        return error(`単語は ${DICTIONARY_LENGTH.word.max} 文字以内で入力してください。`)
+        return error(fmt(t.dict.wordLength, { max: DICTIONARY_LENGTH.word.max }))
       }
       if (reading.length < DICTIONARY_LENGTH.reading.min || reading.length > DICTIONARY_LENGTH.reading.max) {
-        return error(`読み方は ${DICTIONARY_LENGTH.reading.max} 文字以内で入力してください。`)
+        return error(fmt(t.dict.readingLength, { max: DICTIONARY_LENGTH.reading.max }))
       }
       const guild = await editableGuild(ctx)
       if (!("id" in guild)) return guild
@@ -171,7 +172,7 @@ export function createCommands(deps: {
       const existing = await repos.dictionary.findByWord(id, word)
       const max = state.dictionaryMaxEntries()
       if (!existing && (await repos.dictionary.count(id)) >= max) {
-        return error(`辞書に登録できるのは ${max} 件までです。`)
+        return error(fmt(t.dict.full, { max }))
       }
       const user = await repos.users.findByDiscordId(ctx.userId)
       const entry = await repos.dictionary.upsertByWord(id, { word, reading }, user?.id ?? null)
@@ -184,17 +185,18 @@ export function createCommands(deps: {
         metadata: { via: "discord", discordUserId: ctx.userId },
       })
       configs.invalidate(ctx.guildId)
-      return { tone: "success", title: "辞書に登録しました", description: `**${word}** → **${reading}**` }
+      return { tone: "success", title: t.dict.added, description: `**${word}** → **${reading}**` }
     },
 
     async dictRemove(ctx: CommandContext, rawWord: string): Promise<Reply> {
+      const t = messages(ctx.locale)
       const word = rawWord.trim()
       const guild = await editableGuild(ctx)
       if (!("id" in guild)) return guild
       const { id } = guild
       const entry = await repos.dictionary.findByWord(id, word)
       if (!entry || !(await repos.dictionary.deleteByWord(id, word))) {
-        return error(`**${word}** は辞書に登録されていません。`)
+        return error(fmt(t.dict.notFound, { word }))
       }
       const user = await repos.users.findByDiscordId(ctx.userId)
       await repos.audit.record({
@@ -206,18 +208,15 @@ export function createCommands(deps: {
         metadata: { via: "discord", discordUserId: ctx.userId },
       })
       configs.invalidate(ctx.guildId)
-      return { tone: "success", title: "辞書から削除しました", description: `**${entry.word}**` }
+      return { tone: "success", title: t.dict.removed, description: `**${entry.word}**` }
     },
 
     async dictList(ctx: CommandContext): Promise<Reply> {
+      const t = messages(ctx.locale)
       const id = await guildId(ctx.guildId)
       const entries = id ? await repos.dictionary.list(id) : []
       if (entries.length === 0) {
-        return {
-          tone: "info",
-          title: "辞書",
-          description: "まだ単語が登録されていません。`/dict add` で登録できます。",
-        }
+        return { tone: "info", title: t.dict.title, description: t.dict.empty }
       }
       // Embed の本文は 4096 文字まで
       const lines: string[] = []
@@ -231,8 +230,8 @@ export function createCommands(deps: {
       const rest = entries.length - lines.length
       return {
         tone: "info",
-        title: `辞書（${entries.length} 件）`,
-        description: lines.join("\n") + (rest > 0 ? `\n…ほか ${rest} 件（Web で確認できます: ${deps.appOrigin}）` : ""),
+        title: fmt(t.dict.listTitle, { count: entries.length }),
+        description: lines.join("\n") + (rest > 0 ? `\n${fmt(t.dict.more, { count: rest, url: deps.appOrigin })}` : ""),
       }
     },
 
@@ -248,15 +247,29 @@ export function createCommands(deps: {
     },
 
     async voice(ctx: CommandContext): Promise<Reply> {
+      const t = messages(ctx.locale)
       const user = await repos.users.findByDiscordId(ctx.userId)
       const voice = user ? await repos.users.getVoice(user.id) : null
+      const change = { name: t.voice.change, value: fmt(t.voice.changeHint, { url: `${deps.appOrigin}/settings` }) }
+      if (!user || !voice) {
+        return { tone: "info", title: t.voice.title, description: t.voice.unset, fields: [change], ephemeral: true }
+      }
+      // キャラ名は Worker が提供する一覧から引く（取得できなければ「現在利用できません」と表示する）
+      const voices = await deps.listVoices(user.id).catch((err: unknown) => {
+        deps.logger.warn({ err }, "failed to list voices")
+        return []
+      })
       return {
         tone: "info",
-        title: "あなたの読み上げ音声",
-        description: voice
-          ? `${voice.engine}（話者 ID: ${voice.speakerId} / スタイル: ${voice.styleId}、話速 ${voice.speed}）`
-          : "未設定です。各サーバーのデフォルト音声で読み上げます。",
-        fields: [{ name: "変更", value: `${deps.appOrigin}/settings でマイボイスを設定できます。` }],
+        title: t.voice.title,
+        description: `**${voiceLabel(groupVoices(voices), voice, ctx.locale)}**`,
+        fields: [
+          { name: t.speaker.engine, value: voice.engine },
+          { name: t.speaker.speed, value: voice.speed.toFixed(2) },
+          { name: t.speaker.pitch, value: voice.pitch.toFixed(2) },
+          { name: t.speaker.intonation, value: voice.intonation.toFixed(2) },
+          change,
+        ],
         ephemeral: true,
       }
     },

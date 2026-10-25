@@ -121,7 +121,7 @@ Bot / API / Gateway ──▶ Redis（セッション・リアルタイム状態
 - `GET /api/auth/session-expired`（期限切れ Cookie の削除。ログイン画面とのリダイレクトのループを防ぐ）
 - エラーコード `SERVICE_UNAVAILABLE`（503。合成できる Worker がいない等）を Web の型に追加
 - DB: `DictionaryEntry.wordKey`（大文字小文字・全角半角を同一視した重複判定）、`WorkerGuildPermission.scope`、`WorkerCredential.revokedAt`、`UsageEvent.workerType`、`GuildSettings` の readingMode とデフォルト音声、`User.discordGlobalName`
-- Bot コマンド: `/join` `/leave` `/skip` `/voice` `/dict add|remove|list`（`/dict` は既定で「サーバー管理」権限が必要。サーバー側で変更可）
+- Bot コマンド: `/join` `/leave` `/skip` `/voice` `/speaker` `/dict add|remove|list`（`/dict` は既定で「サーバー管理」権限が必要。サーバー側で変更可）
 
 ### 見つけて直した問題
 - Next.js の standalone 出力で、proxy.ts の rewrite が再度 proxy を通りリダイレクトがループする → rewrite 済みをリクエストヘッダーで判定

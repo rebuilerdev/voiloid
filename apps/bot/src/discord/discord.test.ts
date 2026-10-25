@@ -13,8 +13,19 @@ import { leaveGuild, registerCommands } from "./register"
 
 describe("commandDefinitions", () => {
   it("コマンド名と、辞書の編集に管理権限を求める設定", () => {
-    expect(commandDefinitions.map((c) => c.name)).toEqual(["join", "leave", "skip", "voice", "dict"])
+    expect(commandDefinitions.map((c) => c.name)).toEqual(["join", "leave", "skip", "voice", "speaker", "dict"])
     expect(commandDefinitions.find((c) => c.name === "dict")?.default_member_permissions).toBe(String(1 << 5))
+  })
+
+  it("説明は英語を既定にし、日本語の Discord では日本語で表示する", () => {
+    const speaker = commandDefinitions.find((c) => c.name === "speaker")
+    expect(speaker?.description).toMatch(/^Set your reading voice/)
+    expect(speaker?.description_localizations).toEqual({ ja: expect.stringContaining("読み上げ音声") })
+    // サブコマンド・引数も同様
+    const dict = commandDefinitions.find((c) => c.name === "dict")
+    const add = dict?.options?.[0] as { description_localizations?: unknown; options?: { description: string }[] }
+    expect(add.description_localizations).toEqual({ ja: expect.stringContaining("読み方") })
+    expect(add.options?.map((o) => o.description)).toEqual(["Word", "Reading"])
   })
 })
 
@@ -141,6 +152,7 @@ describe("registerEvents", () => {
       dictList: vi.fn(() => Promise.resolve({ tone: "info", description: "list" })),
       dictAutocomplete: vi.fn(() => Promise.resolve([{ name: "w", value: "w" }])),
     }
+    const speakerMenu = { open: vi.fn(() => Promise.resolve()), handle: vi.fn(() => Promise.resolve()) }
     const guildSync = {
       syncAll: vi.fn(),
       joined: vi.fn(() => Promise.resolve()),
@@ -156,6 +168,7 @@ describe("registerEvents", () => {
       main: main as never,
       allClients: [main, sub] as never,
       commands: commands as unknown as Commands,
+      speakerMenu,
       reader: reader,
       sessions: sessions as never,
       guildSync: guildSync,
@@ -163,13 +176,15 @@ describe("registerEvents", () => {
       profileSync,
       logger: silentLogger,
     })
-    return { main, sub, reader, commands, guildSync, botSync, profileSync, sessions }
+    return { main, sub, reader, commands, speakerMenu, guildSync, botSync, profileSync, sessions }
   }
 
   function interaction(commandName: string, sub?: string) {
     return {
       isAutocomplete: () => false,
       isChatInputCommand: () => true,
+      isMessageComponent: () => false,
+      isModalSubmit: () => false,
       inCachedGuild: () => true,
       isRepliable: () => true,
       commandName,
@@ -177,6 +192,7 @@ describe("registerEvents", () => {
       channelId: "tc1",
       channel: { name: "聞き専" },
       user: { id: "u1" },
+      locale: "en-US",
       member: { voice: { channel: { id: "vc1", name: "雑談" } } },
       options: { getSubcommand: () => sub, getString: (name: string) => name, getFocused: () => "" },
       deferred: false,
@@ -294,6 +310,24 @@ describe("registerEvents", () => {
     expect(name === "join" ? i.editReply : i.reply).toHaveBeenCalled()
   })
 
+  it("/speaker とそのメニューの操作をメニューに渡す（他のボタンは無視する）", async () => {
+    const { main, speakerMenu } = setup()
+    const command = interaction("speaker")
+    main.emit(Events.InteractionCreate, command)
+    const component = (customId: string) => ({
+      ...interaction(""),
+      isChatInputCommand: () => false,
+      isMessageComponent: () => true,
+      isModalSubmit: () => false,
+      customId,
+    })
+    main.emit(Events.InteractionCreate, component("speaker:page:VOICEVOX:1"))
+    main.emit(Events.InteractionCreate, component("other:button"))
+    await new Promise((r) => setTimeout(r, 10))
+    expect(speakerMenu.open).toHaveBeenCalledWith(command)
+    expect(speakerMenu.handle).toHaveBeenCalledTimes(1)
+  })
+
   it("補完に応答し、未知のコマンド・サーバー外は無視し、失敗時はエラーを返信する", async () => {
     const { main, commands } = setup()
     const auto = { ...interaction("dict"), isAutocomplete: () => true, respond: vi.fn(() => Promise.resolve()) }
@@ -310,5 +344,7 @@ describe("registerEvents", () => {
     expect(unknown.reply).not.toHaveBeenCalled()
     expect(outside.deferReply).not.toHaveBeenCalled()
     expect(failing.reply).toHaveBeenCalledWith(expect.objectContaining({ flags: MessageFlags.Ephemeral }))
+    // エラーは実行者の言語で返す
+    expect(JSON.stringify(failing.reply.mock.calls)).toContain("Something went wrong")
   })
 })

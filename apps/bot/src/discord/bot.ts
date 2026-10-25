@@ -17,8 +17,10 @@ import type { CommandContext, Commands, Reply } from "../core/commands"
 import type { createGuildSync } from "../core/guild-sync"
 import type { Reader } from "../core/reader"
 import type { SessionManager } from "../core/sessions"
+import { localeFromDiscord, messages } from "../i18n"
 import { toReplyOptions } from "./embeds"
 import type { ProfileSync } from "./profile"
+import { isSpeakerCustomId, type SpeakerMenu } from "./speaker-menu"
 
 export function createClients(mainToken: string, subTokens: string[]) {
   const main = new Client({
@@ -84,6 +86,7 @@ export function registerEvents(deps: {
   main: Client
   allClients: Client[]
   commands: Commands
+  speakerMenu: SpeakerMenu
   reader: Reader
   sessions: SessionManager
   guildSync: ReturnType<typeof createGuildSync>
@@ -91,7 +94,7 @@ export function registerEvents(deps: {
   profileSync: ProfileSync
   logger: Logger
 }) {
-  const { main, commands, reader, sessions, logger } = deps
+  const { main, commands, speakerMenu, reader, sessions, logger } = deps
 
   main.on(Events.GuildCreate, (guild) => void deps.guildSync.joined(guildInfo(guild)).catch(() => undefined))
   main.on(Events.GuildUpdate, (_old, guild) => void deps.guildSync.updated(guildInfo(guild)).catch(() => undefined))
@@ -159,6 +162,7 @@ export function registerEvents(deps: {
       channelId: interaction.channelId ?? "",
       channelName: channel && "name" in channel ? channel.name : "",
       memberVoiceChannel: voice ? { id: voice.id, name: voice.name } : null,
+      locale: localeFromDiscord(interaction.locale),
     }
   }
 
@@ -168,6 +172,14 @@ export function registerEvents(deps: {
         await interaction.respond(
           await commands.dictAutocomplete(interaction.guildId, interaction.options.getFocused()),
         )
+        return
+      }
+      if (
+        (interaction.isMessageComponent() || interaction.isModalSubmit()) &&
+        interaction.inCachedGuild() &&
+        isSpeakerCustomId(interaction.customId)
+      ) {
+        await speakerMenu.handle(interaction)
         return
       }
       if (!interaction.isChatInputCommand()) return
@@ -190,6 +202,9 @@ export function registerEvents(deps: {
         case "voice":
           reply = await commands.voice(ctx)
           break
+        case "speaker":
+          await speakerMenu.open(interaction)
+          return
         case "dict": {
           const sub = interaction.options.getSubcommand()
           reply =
@@ -211,7 +226,11 @@ export function registerEvents(deps: {
     } catch (error) {
       logger.error({ err: error }, "interaction failed")
       if (interaction.isRepliable()) {
-        const reply = toReplyOptions({ tone: "error", description: "処理中にエラーが発生しました。", ephemeral: true })
+        const reply = toReplyOptions({
+          tone: "error",
+          description: messages(localeFromDiscord(interaction.locale)).errors.unexpected,
+          ephemeral: true,
+        })
         await (
           interaction.deferred || interaction.replied ? interaction.followUp(reply) : interaction.reply(reply)
         ).catch(() => undefined)

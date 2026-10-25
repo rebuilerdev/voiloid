@@ -20,6 +20,7 @@ import { createGuildSync } from "./guild-sync"
 import { cleanupStaleSessions, createSessionRecorder } from "./recorder"
 import { createServiceState } from "./service-state"
 import { SessionManager } from "./sessions"
+import { createSpeaker, groupVoices } from "./speaker"
 
 const db = createTestDatabase()
 const repos = createRepositories(db)
@@ -51,6 +52,11 @@ function setup() {
   const pickBot = vi.fn((_guildId: string, _voiceChannelId: string): string | null => "bot1")
   const { state, values } = fakeState()
   const names: Record<string, string> = { tc1: "聞き専", vc1: "雑談", tcFixed: "固定テキスト", vcFixed: "固定VC" }
+  const listVoices = vi.fn((_userId: string) =>
+    Promise.resolve([
+      { engine: "VOICEVOX", speakerId: "s", speakerName: "四国めたん", styleId: "3", styleName: "ノーマル" },
+    ]),
+  )
   const commands = createCommands({
     sessions,
     configs,
@@ -58,10 +64,11 @@ function setup() {
     repos,
     logger: silentLogger,
     appOrigin: "https://console.example.com",
+    listVoices,
     pickBot,
     channelName: (_g, id) => names[id] ?? null,
   })
-  return { commands, sessions, connector, configs, synthesized, pickBot, values }
+  return { commands, sessions, connector, configs, synthesized, pickBot, values, listVoices }
 }
 
 async function guild() {
@@ -74,6 +81,7 @@ const ctx = (guildId: string, patch: Partial<CommandContext> = {}): CommandConte
   channelId: "tc1",
   channelName: "聞き専",
   memberVoiceChannel: { id: "vc1", name: "雑談" },
+  locale: "ja",
   ...patch,
 })
 
@@ -260,17 +268,177 @@ describe("/dict", () => {
   })
 })
 
+describe("英語", () => {
+  it("実行者の言語が英語なら英語で返信する", async () => {
+    const g = await guild()
+    const { commands } = setup()
+    expect(await commands.join(ctx(g.discordGuildId, { locale: "en" }))).toMatchObject({
+      title: "Started reading",
+      description: "Reading messages in <#tc1>.",
+    })
+    expect((await commands.dictList(ctx(g.discordGuildId, { locale: "en" }))).description).toContain("`/dict add`")
+    expect((await commands.voice(ctx(g.discordGuildId, { locale: "en" }))).description).toBe(
+      "Not set. Each server's default voice is used.",
+    )
+    expect(
+      (await commands.leave(ctx("999", { locale: "en", memberVoiceChannel: null, channelId: "x" }))).description,
+    ).toBe("No voice channel is being read.")
+  })
+})
+
 describe("/voice", () => {
-  it("マイボイスを表示し、未設定なら案内する", async () => {
+  it("マイボイスをキャラ名で表示し（話者 ID は出さない）、未設定なら案内する", async () => {
     const g = await guild()
     const user = await createTestUser(db, { discordUserId: "300000000000000001" })
-    const { commands } = setup()
+    const { commands, listVoices } = setup()
     expect((await commands.voice(ctx(g.discordGuildId))).description).toContain("未設定です")
     await db.userVoiceSettings.create({ data: { userId: user.id, engineId: "VOICEVOX", speakerId: "s", styleId: "3" } })
-    expect((await commands.voice(ctx(g.discordGuildId))).description).toContain("VOICEVOX")
-    expect((await commands.voice(ctx(g.discordGuildId))).fields?.[0]?.value).toContain(
-      "https://console.example.com/settings",
+    const reply = await commands.voice(ctx(g.discordGuildId))
+    expect(reply.description).toBe("**四国めたん（ノーマル）**")
+    expect(reply.fields?.map((f) => f.value)).toEqual([
+      "VOICEVOX",
+      "1.00",
+      "0.00",
+      "1.00",
+      expect.stringContaining("https://console.example.com/settings"),
+    ])
+    expect(listVoices).toHaveBeenCalledWith(user.id)
+  })
+
+  it("一覧に無い声・一覧を取得できない場合も ID は出さない", async () => {
+    const g = await guild()
+    const user = await createTestUser(db, { discordUserId: "300000000000000001" })
+    await db.userVoiceSettings.create({
+      data: { userId: user.id, engineId: "VOICEVOX", speakerId: "gone", styleId: "9" },
+    })
+    const { commands, listVoices } = setup()
+    expect((await commands.voice(ctx(g.discordGuildId))).description).toBe("**VOICEVOX の声（現在利用できません）**")
+    listVoices.mockRejectedValueOnce(new Error("down"))
+    expect((await commands.voice(ctx(g.discordGuildId, { locale: "en" }))).description).toBe(
+      "**A VOICEVOX voice (currently unavailable)**",
     )
+  })
+})
+
+describe("/speaker", () => {
+  const profile = { discordUserId: "300000000000000002", username: "alice", globalName: "Alice", avatar: null }
+  const voices = [
+    { engine: "VOICEVOX", speakerId: "s1", speakerName: "四国めたん", styleId: "2", styleName: "ノーマル" },
+    { engine: "VOICEVOX", speakerId: "s1", speakerName: "四国めたん", styleId: "0", styleName: "あまあま" },
+    { engine: "COEIROINK", speakerId: "c1", speakerName: "つくよみちゃん", styleId: "0", styleName: "れいせい" },
+    { engine: "Unknown", speakerId: "x", speakerName: "x", styleId: "x", styleName: "x" },
+  ]
+
+  function setupSpeaker(list: () => Promise<typeof voices> = () => Promise.resolve(voices)) {
+    const { state, values } = fakeState()
+    const notified: string[] = []
+    const listVoices = vi.fn((_userId: string) => list())
+    const speaker = createSpeaker({
+      repos,
+      state,
+      listVoices,
+      notifyUser: (id) => {
+        notified.push(id)
+        return Promise.resolve()
+      },
+      logger: silentLogger,
+    })
+    return { speaker, notified, values, listVoices }
+  }
+
+  it("声をエンジン → 話者 → スタイルにまとめる（未知のエンジンは除く）", () => {
+    expect(groupVoices(voices)).toEqual([
+      {
+        id: "VOICEVOX",
+        speakers: [
+          {
+            id: "s1",
+            name: "四国めたん",
+            styles: [
+              { id: "2", name: "ノーマル" },
+              { id: "0", name: "あまあま" },
+            ],
+          },
+        ],
+      },
+      { id: "COEIROINK", speakers: [{ id: "c1", name: "つくよみちゃん", styles: [{ id: "0", name: "れいせい" }] }] },
+    ])
+  })
+
+  it("Web にログインしていない人も使える。声を選び、調整し、解除するたびに Gateway に知らせる", async () => {
+    const { speaker, notified, listVoices } = setupSpeaker()
+    const loaded = await speaker.load(profile, "ja")
+    expect(loaded).toMatchObject({ ok: true, view: { voice: null } })
+    const user = await repos.users.findByDiscordId(profile.discordUserId)
+    expect(user?.discordGlobalName).toBe("Alice")
+    expect(listVoices).toHaveBeenCalledWith(user?.id)
+
+    const chosen = await speaker.update(
+      profile,
+      { kind: "voice", engine: "VOICEVOX", speakerId: "s1", styleId: "0" },
+      "ja",
+    )
+    expect(chosen).toMatchObject({ ok: true, view: { voice: { engine: "VOICEVOX", styleId: "0", speed: 1 } } })
+    await speaker.update(profile, { kind: "params", speed: 1.5, pitch: -0.1, intonation: 1.2 }, "ja")
+    // 声を変えても調整値は引き継ぐ
+    await speaker.update(profile, { kind: "voice", engine: "COEIROINK", speakerId: "c1", styleId: "0" }, "ja")
+    expect(await speaker.current(profile.discordUserId)).toEqual({
+      engine: "COEIROINK",
+      speakerId: "c1",
+      styleId: "0",
+      speed: 1.5,
+      pitch: -0.1,
+      intonation: 1.2,
+    })
+    expect(await speaker.update(profile, { kind: "reset" }, "ja")).toMatchObject({ ok: true, view: { voice: null } })
+    expect(await speaker.current(profile.discordUserId)).toBeNull()
+    expect(notified).toEqual(Array(4).fill(profile.discordUserId))
+  })
+
+  it("一覧に無い声・範囲外の値・声が未設定での調整は保存しない", async () => {
+    const { speaker, notified } = setupSpeaker()
+    const error = { ok: false, reply: { tone: "error" } }
+    expect(
+      await speaker.update(profile, { kind: "voice", engine: "VOICEVOX", speakerId: "s1", styleId: "9" }, "ja"),
+    ).toMatchObject(error)
+    expect(await speaker.update(profile, { kind: "params", speed: 1, pitch: 0, intonation: 1 }, "ja")).toMatchObject(
+      error,
+    )
+    await speaker.update(profile, { kind: "voice", engine: "VOICEVOX", speakerId: "s1", styleId: "2" }, "ja")
+    for (const params of [
+      { speed: 3, pitch: 0, intonation: 1 },
+      { speed: 1, pitch: 0.5, intonation: 1 },
+      { speed: Number.NaN, pitch: 0, intonation: 1 },
+    ]) {
+      expect(await speaker.update(profile, { kind: "params", ...params }, "ja")).toMatchObject(error)
+    }
+    expect((await speaker.current(profile.discordUserId))?.speed).toBe(1)
+    expect(notified).toHaveLength(1)
+  })
+
+  it("エラーは指定した言語で返す", async () => {
+    const { speaker } = setupSpeaker()
+    expect(await speaker.update(profile, { kind: "params", speed: 1, pitch: 0, intonation: 1 }, "en")).toMatchObject({
+      ok: false,
+      reply: { description: "Choose a speaker first." },
+    })
+  })
+
+  it("利用停止中のユーザー・Gateway の障害・声が無い場合はエラー", async () => {
+    const suspended = setupSpeaker()
+    suspended.values.suspendedUsers.add(profile.discordUserId)
+    expect(await suspended.speaker.load(profile, "ja")).toMatchObject({
+      ok: false,
+      reply: { description: expect.stringContaining("利用停止") },
+    })
+    expect(await setupSpeaker(() => Promise.reject(new Error("down"))).speaker.load(profile, "ja")).toMatchObject({
+      ok: false,
+      reply: { description: expect.stringContaining("取得できませんでした") },
+    })
+    expect(await setupSpeaker(() => Promise.resolve([])).speaker.load(profile, "ja")).toMatchObject({
+      ok: false,
+      reply: { description: expect.stringContaining("Worker") },
+    })
   })
 })
 

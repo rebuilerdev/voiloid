@@ -1,7 +1,7 @@
 import { once } from "node:events"
 
 import { createDatabase, createRepositories } from "@voiloid/database"
-import { invalidationSchema, redisKeys } from "@voiloid/shared/protocol"
+import { invalidationSchema, redisKeys, type Invalidation } from "@voiloid/shared/protocol"
 import { Events, type Client } from "discord.js"
 import { Redis } from "ioredis"
 import { pino } from "pino"
@@ -16,9 +16,12 @@ import { createReader } from "./core/reader"
 import { cleanupStaleSessions, createSessionRecorder } from "./core/recorder"
 import { createServiceState } from "./core/service-state"
 import { SessionManager } from "./core/sessions"
+import { createSpeaker } from "./core/speaker"
 import { createSynthesizer } from "./core/synthesizer"
+import { createVoiceCatalog } from "./core/voice-catalog"
 import { botIdentity, channelName, createBotPool, createClients, guildInfo, registerEvents } from "./discord/bot"
 import { createProfileSync } from "./discord/profile"
+import { createSpeakerMenu } from "./discord/speaker-menu"
 import { leaveGuild, registerCommands } from "./discord/register"
 import { createVoiceConnector } from "./discord/voice"
 
@@ -69,6 +72,7 @@ const sessions = new SessionManager({
   logger,
   maxQueue: config.MAX_QUEUE,
 })
+const listVoices = createVoiceCatalog({ baseUrl: config.GATEWAY_INTERNAL_URL, token: config.INTERNAL_API_TOKEN })
 const pool = createBotPool(all)
 const pickBot = (guildId: string, voiceChannelId: string) => pool.pick(guildId, voiceChannelId, sessions)
 const nameOf = (guildId: string, channelId: string) => channelName(clients.main, guildId, channelId)
@@ -83,9 +87,23 @@ registerEvents({
     repos,
     logger,
     appOrigin: config.APP_ORIGIN,
+    listVoices,
     pickBot,
     channelName: nameOf,
   }),
+  speakerMenu: createSpeakerMenu(
+    createSpeaker({
+      repos,
+      state,
+      listVoices,
+      // Web でマイボイスを変えたときと同じく、Gateway のキャッシュを破棄させる
+      notifyUser: async (userId) => {
+        const message: Invalidation = { kind: "user", userId }
+        await redis.publish(redisKeys.invalidation(), JSON.stringify(message))
+      },
+      logger,
+    }),
+  ),
   reader: createReader({ sessions, configs, state, logger, pickBot, channelName: (g, c) => nameOf(g, c) ?? "" }),
   sessions,
   guildSync,
