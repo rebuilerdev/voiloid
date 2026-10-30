@@ -155,7 +155,7 @@ services:
       postgres: { condition: service_healthy }
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-voiloid}
@@ -185,7 +185,7 @@ services:
 
   # PostgreSQL の定期バックアップ（pg_dump。保持期間を過ぎたものは削除）
   backup:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       PGHOST: postgres
