@@ -133,7 +133,7 @@ services:
   # エンジンはバージョンを固定する（latest は API の変更が予告なく入るため。更新は Dependabot の PR で CI を通してから）
   # 利用者向けのイメージ（apps/web/features/workers/worker-setup-wizard.tsx・docs/self-hosted-worker.md）も揃える
   voicevox:
-    image: voicevox/voicevox_engine:cpu-0.26.0
+    image: voicevox/voicevox_engine:cpu-0.26.1
     restart: unless-stopped
     profiles: ["official-worker"]
 
