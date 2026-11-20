@@ -171,7 +171,7 @@ services:
     shm_size: 256mb
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     # セッションを再起動後も残す
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
